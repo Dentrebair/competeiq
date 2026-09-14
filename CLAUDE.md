@@ -66,7 +66,8 @@ the webhook body.
 - `start_scrape` — runs the Shopify scraper Actor for one competitor. Fired by
   that competitor's pg-boss schedule, or by Run Now (`runCompetitorNow()`).
 - `check_apify_run` — the delayed backstop (~30 min after start) for a lost
-  completion webhook. **Not built yet.**
+  completion webhook. Polls Apify; on SUCCEEDED enqueues processor, on RUNNING
+  reschedules itself for ~5 min, on FAILED/ABORTED logs and skips.
 - `process_apify_run` — replaces WF-02. Diffs the run against the Baseline,
   calls Claude Haiku, writes alerts + Baseline in one transaction.
 - `generate_digest` — replaces WF-03. Claude Opus with thinking on, `effort:
@@ -265,13 +266,13 @@ and unit-tested (mocked Apify/Claude/db — no live run through either has
 happened yet), the run→competitor lookup (`scrape_runs`), migrations 00→10 all
 written.
 
-**Built but not yet exercised end-to-end:** `start_scrape` has never actually
-started a real Apify run from a live schedule; `/api/webhooks/apify` doesn't
-exist yet, so the webhook path in the architecture diagram above is currently
-dead until that route is built (the delayed-check backstop, `check_apify_run`,
-also doesn't exist yet — see "Worker jobs"). Until both exist, a competitor's
-schedule fires `start_scrape` but nothing ever calls `process_apify_run` for
-it.
+**Built but not yet exercised end-to-end:** All four handler jobs exist
+(`start_scrape`, `check_apify_run`, `process_apify_run`, `generate_digest`) and
+the webhook route (`/api/webhooks/apify`) is live. The Apify → app → worker
+pipeline is complete, but has never run against a real Apify run from a live
+schedule. To test: add a competitor, let the cron fire `start_scrape`, either
+wait for the webhook or for the ~30-min backstop to fire `check_apify_run`,
+confirm alerts land in Supabase and appear over Realtime in a browser tab.
 
 **Never verified:** the Realtime smoke test — whether a `digests` UPDATE or a
 new `alerts` row actually reaches a real browser tab. See `docs/WF-03-handoff.md`
@@ -291,9 +292,9 @@ new `alerts` row actually reaches a real browser tab. See `docs/WF-03-handoff.md
   `digests.status='generating'` prevents concurrent runs.
 
 ### Open
-- **`/api/webhooks/apify` and `check_apify_run` don't exist yet.** Until both
-  are built, a scheduled or manual scrape starts but its result is never
-  processed — see "Built but not yet exercised end-to-end" above.
+- **End-to-end test with a real Apify run:** Add a competitor, let its schedule
+  fire, confirm the run is processed and alerts appear in the browser over
+  Realtime. Document in `docs/` if there are surprises (timing, webhook delays, etc.).
 - **No delete-competitor UI exists**, and the schedule-orphan risk that creates
   if one is ever added is documented but not guarded against — see the
   callout under "Who owns which column."
