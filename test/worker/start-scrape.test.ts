@@ -92,6 +92,17 @@ describe("startScrape", () => {
     ]);
   });
 
+  it("strips a trailing slash from APP_URL rather than double-slashing the webhook path", async () => {
+    process.env.APP_URL = "https://app.example/";
+    const fetchMock = mockApifyRunStart();
+
+    await startScrape(jobFor("comp-1"));
+
+    const webhooksParam = new URL(fetchMock.mock.calls[0][0] as string).searchParams.get("webhooks")!;
+    const webhooks = JSON.parse(Buffer.from(webhooksParam, "base64").toString("utf8"));
+    expect(webhooks[0].requestUrl).toBe("https://app.example/api/webhooks/apify");
+  });
+
   it("throws when the competitor cannot be found or is inactive", async () => {
     db.getScrapeTarget.mockResolvedValue(null);
 

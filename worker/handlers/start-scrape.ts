@@ -57,10 +57,13 @@ async function runStartScrape(competitorId: string): Promise<void> {
  * array of {eventTypes, requestUrl, payloadTemplate, headersTemplate}).
  */
 async function startApifyRun(url: string): Promise<{ id: string }> {
+  // Trailing slash on APP_URL (easy to paste in as-is from a browser address
+  // bar) would otherwise double up before /api/webhooks/apify.
+  const appUrl = requireEnv("APP_URL").replace(/\/+$/, "");
   const webhooks = [
     {
       eventTypes: ["ACTOR.RUN.SUCCEEDED"],
-      requestUrl: `${requireEnv("APP_URL")}/api/webhooks/apify`,
+      requestUrl: `${appUrl}/api/webhooks/apify`,
       payloadTemplate: "{\"resource\":{{resource}}}",
       // Never in the URL (ADR-0005) — the route reads this header in constant time.
       headersTemplate: JSON.stringify({ "x-webhook-secret": requireEnv("APIFY_WEBHOOK_SECRET") }),
