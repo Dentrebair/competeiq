@@ -1,27 +1,397 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+
+/* ---------------------------------------------------------------------------
+   CompeteIQ — decision console
+
+   Two grounds, not one. The rail is a fixed dark field that never changes with
+   the theme; the workspace beside it is a warm off-white that does. That split
+   is the whole visual argument: navigation is furniture and should recede,
+   while the evidence you are reading sits on paper.
+
+   Three colour families, kept apart on purpose:
+
+     --brand   lime. Identity only — the mark and the active-nav indicator.
+               Never used for state, never for a button that does something.
+     --accent  teal. Interaction: links, selected surfaces, the discuss affordance.
+     --sev-*   the severity ramp. Deliberately NOT derived from either of the
+               above, because urgency has to read on its own terms. A "critical"
+               rendered in a shade of the brand competes with every other
+               accented thing on the page and stops meaning anything.
+
+   `--sev-unclassified` is a fourth thing again, and violet rather than a step on
+   the ramp: an alert Claude failed to classify is *ungraded*, not low priority,
+   and putting it anywhere on a low→high scale asserts a judgement nothing made.
+   --------------------------------------------------------------------------- */
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Workspace */
+  --ground: #f4f4f1;
+  --surface: #ffffff;
+  --surface-sunken: #fafaf8;
+  --surface-raised: #ffffff;
+  --border: #e5e5df;
+  --border-strong: #d2d2c9;
+
+  --ink: #15201c;
+  --ink-muted: #5b6862;
+  --ink-faint: #8a938e;
+
+  /* Identity */
+  --brand: #c2ef4b;
+  --brand-ink: #12241a;
+
+  /* Interaction */
+  --accent: #0f7360;
+  --accent-hover: #0b5a4a;
+  --accent-contrast: #ffffff;
+  --accent-wash: #e9f5f0;
+  --accent-line: #b7dbcf;
+
+  /* Primary buttons are near-black, not accent — the accent is for links, and a
+     page with six teal buttons has no primary action at all. */
+  --solid: #16211d;
+  --solid-hover: #0d1613;
+  --solid-ink: #ffffff;
+
+  /* The rail. Fixed across themes. */
+  --rail: #0c1a16;
+  --rail-raised: #142621;
+  --rail-border: #21332d;
+  --rail-ink: #eef2ef;
+  --rail-ink-muted: #93a49d;
+
+  /* Severity */
+  --sev-critical: #c0362a;
+  --sev-critical-wash: #fdeeec;
+  --sev-high: #b45309;
+  --sev-high-wash: #fdf3e7;
+  --sev-medium: #9c7c07;
+  --sev-medium-wash: #fbf5e3;
+  --sev-low: #12795c;
+  --sev-low-wash: #e7f4ee;
+  --sev-unclassified: #6d4fc4;
+  --sev-unclassified-wash: #f2eefc;
+
+  /* Heatmap fills. Separate tokens from the chips: a cell is a large flat area
+     and needs a lighter tint than a 12px label sitting on the same colour. */
+  --cell-low: #d9efe3;
+  --cell-low-ink: #0f5f47;
+  --cell-medium: #fbeec4;
+  --cell-medium-ink: #7a5a0d;
+  --cell-high: #fbd9d4;
+  --cell-high-ink: #9c2b20;
+  --cell-none: #f2f2ee;
+  --cell-review: #e8e8e3;
+  --cell-review-ink: #63706a;
+
+
+  /* Signal identity.
+     One hue per signal so price / promo / catalogue separate peripherally,
+     before the label is read. Distinct from severity on purpose: a signal's
+     colour says WHAT KIND of move it is and never how urgent — the two are
+     independent, and a blue "critical" must still read as critical. */
+  --sig-price: #2563a8;
+  --sig-price-wash: #e8f0fa;
+  --sig-promo: #4d7c14;
+  --sig-promo-wash: #eef7e0;
+  --sig-catalog: #a1660a;
+  --sig-catalog-wash: #fdf3e0;
+  --sig-website: #0f7d78;
+  --sig-website-wash: #e4f5f3;
+  --sig-ads: #b45309;
+  --sig-ads-wash: #fdf1e3;
+  --sig-reviews: #b03060;
+  --sig-reviews-wash: #fceef3;
+  --sig-newsletter: #4a4fbd;
+  --sig-newsletter-wash: #ecedfb;
+  --sig-unknown: #64726c;
+  --sig-unknown-wash: #f0f2f0;
+
+  --radius: 10px;
+  --shadow-card: 0 1px 2px rgba(21, 32, 28, 0.04);
+  --shadow-raised: 0 1px 2px rgba(21, 32, 28, 0.05), 0 12px 28px -20px rgba(21, 32, 28, 0.35);
 }
 
+/* System-default dark, guarded so an explicit light choice still wins. */
 @media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  :root:not([data-theme="light"]) {
+    --ground: #0e1512;
+    --surface: #151e1a;
+    --surface-sunken: #111a16;
+    --surface-raised: #1a2521;
+    --border: #253029;
+    --border-strong: #35443c;
+
+    --ink: #e9efeb;
+    --ink-muted: #9aa8a1;
+    --ink-faint: #71807a;
+
+    --brand: #c2ef4b;
+    --brand-ink: #12241a;
+
+    --accent: #3fbf9e;
+    --accent-hover: #62d3b6;
+    --accent-contrast: #06201a;
+    --accent-wash: #10332a;
+    --accent-line: #1d4c40;
+
+    --solid: #e9efeb;
+    --solid-hover: #ffffff;
+    --solid-ink: #10201b;
+
+    --sev-critical: #ff8071;
+    --sev-critical-wash: #2e1512;
+    --sev-high: #eba85a;
+    --sev-high-wash: #2c2009;
+    --sev-medium: #d9bd63;
+    --sev-medium-wash: #272108;
+    --sev-low: #4cc39b;
+    --sev-low-wash: #0f2a22;
+    --sev-unclassified: #a992ec;
+    --sev-unclassified-wash: #211a38;
+
+
+    --sig-price: #7db4ea;
+    --sig-price-wash: #142334;
+    --sig-promo: #a8d95f;
+    --sig-promo-wash: #1b2a12;
+    --sig-catalog: #e0b45f;
+    --sig-catalog-wash: #2c2210;
+    --sig-website: #4fc6bd;
+    --sig-website-wash: #102c2a;
+    --sig-ads: #eba85a;
+    --sig-ads-wash: #2c2009;
+    --sig-reviews: #ef86ae;
+    --sig-reviews-wash: #2e1520;
+    --sig-newsletter: #9a9ef0;
+    --sig-newsletter-wash: #1c1d38;
+    --sig-unknown: #93a29b;
+    --sig-unknown-wash: #1a211e;
+
+    --cell-low: #16382d;
+    --cell-low-ink: #7fdcbb;
+    --cell-medium: #362c10;
+    --cell-medium-ink: #e0c579;
+    --cell-high: #3a1c18;
+    --cell-high-ink: #ff9e91;
+    --cell-none: #141c19;
+    --cell-review: #1e2723;
+    --cell-review-ink: #93a29b;
+
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-raised: 0 1px 2px rgba(0, 0, 0, 0.5), 0 12px 28px -20px rgba(0, 0, 0, 0.9);
   }
 }
 
-body {
-  color: var(--foreground);
-  background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+/* Explicit dark, so the sidebar toggle beats a light OS setting. */
+:root[data-theme="dark"] {
+  --ground: #0e1512;
+  --surface: #151e1a;
+  --surface-sunken: #111a16;
+  --surface-raised: #1a2521;
+  --border: #253029;
+  --border-strong: #35443c;
+
+  --ink: #e9efeb;
+  --ink-muted: #9aa8a1;
+  --ink-faint: #71807a;
+
+  --accent: #3fbf9e;
+  --accent-hover: #62d3b6;
+  --accent-contrast: #06201a;
+  --accent-wash: #10332a;
+  --accent-line: #1d4c40;
+
+  --solid: #e9efeb;
+  --solid-hover: #ffffff;
+  --solid-ink: #10201b;
+
+  --sev-critical: #ff8071;
+  --sev-critical-wash: #2e1512;
+  --sev-high: #eba85a;
+  --sev-high-wash: #2c2009;
+  --sev-medium: #d9bd63;
+  --sev-medium-wash: #272108;
+  --sev-low: #4cc39b;
+  --sev-low-wash: #0f2a22;
+  --sev-unclassified: #a992ec;
+  --sev-unclassified-wash: #211a38;
+
+
+  --sig-price: #7db4ea;
+  --sig-price-wash: #142334;
+  --sig-promo: #a8d95f;
+  --sig-promo-wash: #1b2a12;
+  --sig-catalog: #e0b45f;
+  --sig-catalog-wash: #2c2210;
+  --sig-website: #4fc6bd;
+  --sig-website-wash: #102c2a;
+  --sig-ads: #eba85a;
+  --sig-ads-wash: #2c2009;
+  --sig-reviews: #ef86ae;
+  --sig-reviews-wash: #2e1520;
+  --sig-newsletter: #9a9ef0;
+  --sig-newsletter-wash: #1c1d38;
+  --sig-unknown: #93a29b;
+  --sig-unknown-wash: #1a211e;
+
+  --cell-low: #16382d;
+  --cell-low-ink: #7fdcbb;
+  --cell-medium: #362c10;
+  --cell-medium-ink: #e0c579;
+  --cell-high: #3a1c18;
+  --cell-high-ink: #ff9e91;
+  --cell-none: #141c19;
+  --cell-review: #1e2723;
+  --cell-review-ink: #93a29b;
+
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-raised: 0 1px 2px rgba(0, 0, 0, 0.5), 0 12px 28px -20px rgba(0, 0, 0, 0.9);
 }
 
-@layer utilities {
-  .text-balance {
-    text-wrap: balance;
+/* Tailwind v4 is CSS-first: this block is what generates bg-surface,
+   text-ink-muted, border-border and the rest. There is no tailwind.config.ts. */
+@theme inline {
+  --color-ground: var(--ground);
+  --color-surface: var(--surface);
+  --color-surface-sunken: var(--surface-sunken);
+  --color-surface-raised: var(--surface-raised);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-ink-faint: var(--ink-faint);
+
+  --color-brand: var(--brand);
+  --color-brand-ink: var(--brand-ink);
+
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-contrast: var(--accent-contrast);
+  --color-accent-wash: var(--accent-wash);
+  --color-accent-line: var(--accent-line);
+
+  --color-solid: var(--solid);
+  --color-solid-hover: var(--solid-hover);
+  --color-solid-ink: var(--solid-ink);
+
+  --color-rail: var(--rail);
+  --color-rail-raised: var(--rail-raised);
+  --color-rail-border: var(--rail-border);
+  --color-rail-ink: var(--rail-ink);
+  --color-rail-ink-muted: var(--rail-ink-muted);
+
+  --color-sev-critical: var(--sev-critical);
+  --color-sev-critical-wash: var(--sev-critical-wash);
+  --color-sev-high: var(--sev-high);
+  --color-sev-high-wash: var(--sev-high-wash);
+  --color-sev-medium: var(--sev-medium);
+  --color-sev-medium-wash: var(--sev-medium-wash);
+  --color-sev-low: var(--sev-low);
+  --color-sev-low-wash: var(--sev-low-wash);
+  --color-sev-unclassified: var(--sev-unclassified);
+  --color-sev-unclassified-wash: var(--sev-unclassified-wash);
+
+  --color-cell-low: var(--cell-low);
+  --color-cell-low-ink: var(--cell-low-ink);
+  --color-cell-medium: var(--cell-medium);
+  --color-cell-medium-ink: var(--cell-medium-ink);
+  --color-cell-high: var(--cell-high);
+  --color-cell-high-ink: var(--cell-high-ink);
+  --color-cell-none: var(--cell-none);
+  --color-cell-review: var(--cell-review);
+  --color-cell-review-ink: var(--cell-review-ink);
+
+  --color-sig-price: var(--sig-price);
+  --color-sig-price-wash: var(--sig-price-wash);
+  --color-sig-promo: var(--sig-promo);
+  --color-sig-promo-wash: var(--sig-promo-wash);
+  --color-sig-catalog: var(--sig-catalog);
+  --color-sig-catalog-wash: var(--sig-catalog-wash);
+  --color-sig-website: var(--sig-website);
+  --color-sig-website-wash: var(--sig-website-wash);
+  --color-sig-ads: var(--sig-ads);
+  --color-sig-ads-wash: var(--sig-ads-wash);
+  --color-sig-reviews: var(--sig-reviews);
+  --color-sig-reviews-wash: var(--sig-reviews-wash);
+  --color-sig-newsletter: var(--sig-newsletter);
+  --color-sig-newsletter-wash: var(--sig-newsletter-wash);
+  --color-sig-unknown: var(--sig-unknown);
+  --color-sig-unknown-wash: var(--sig-unknown-wash);
+
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--ground);
+  color: var(--ink);
+}
+
+/* Figures that sit in columns — prices, percentages, counts — have to line up
+   vertically or the eye cannot compare them down the page. */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Section eyebrows. Repeated on every screen, so it earns a class.
+   
+   The colour is wrapped in :where() on purpose. This block sits after
+   `@import "tailwindcss"`, so a plain `.eyebrow { color: ... }` has the same
+   specificity as a `text-*` utility and wins on source order — which silently
+   swallowed every per-section heading colour. `:where()` has zero specificity,
+   so it supplies the default and any utility overrides it. */
+.eyebrow {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+:where(.eyebrow) {
+  color: var(--ink-faint);
+}
+
+/* "Not collected in this version" surfaces. Hatching says *deliberately absent*
+   in a way greying-out does not — grey reads as "broken" or "loading", and the
+   difference matters when half the signal grid is not wired up yet. */
+.hatched {
+  background-image: repeating-linear-gradient(
+    45deg,
+    color-mix(in oklab, var(--border) 55%, transparent) 0 1px,
+    transparent 1px 7px
+  );
+}
+
+/* Theme-conditional visibility.
+   The theme toggle needs to show a moon in light mode and a sun in dark. Doing
+   that with state means reading localStorage, which is unreadable during SSR —
+   so the label would either flash or force a setState inside an effect. CSS
+   already knows which theme is active, so let it decide and keep the component
+   pure. Mirrors the same three states as the palette above. */
+.theme-dark-only { display: none; }
+.theme-light-only { display: inline-flex; }
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .theme-dark-only { display: inline-flex; }
+  :root:not([data-theme="light"]) .theme-light-only { display: none; }
+}
+
+:root[data-theme="dark"] .theme-dark-only { display: inline-flex; }
+:root[data-theme="dark"] .theme-light-only { display: none; }
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }
