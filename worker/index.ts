@@ -5,6 +5,7 @@ import { log, logError } from "./log";
 import { startWorker } from "./worker";
 import { processApifyRun } from "./handlers/process-apify-run";
 import { startScrape } from "./handlers/start-scrape";
+import { checkApifyRun } from "./handlers/check-apify-run";
 import { generateDigest } from "./handlers/generate-digest";
 
 /**
@@ -16,6 +17,7 @@ import { generateDigest } from "./handlers/generate-digest";
 const HANDLERS: JobHandlers = {
   process_apify_run: processApifyRun,
   start_scrape: startScrape,
+  check_apify_run: checkApifyRun,
   generate_digest: generateDigest,
 };
 
