@@ -8,6 +8,7 @@ import {
   setCompetitorActive,
   syncCompetitor,
   updateSignalConfig,
+  runCompetitorNow,
   type CompetitorActionState,
 } from "@/app/actions/competitors";
 import { Panel, PanelHeading } from "@/components/page-header";
@@ -474,6 +475,17 @@ export function Monitoring({ competitors }: { competitors: CompetitorRow[] }) {
             </p>
 
             <div className="ml-auto flex items-center gap-3">
+              <button
+                type="button"
+                disabled={pending || !selected.active}
+                onClick={() =>
+                  startTransition(async () => handle(await runCompetitorNow(selected.id)))
+                }
+                className="rounded-lg border border-border px-3.5 py-2 text-[15px] font-medium text-ink-muted transition-colors hover:border-border-strong hover:text-ink disabled:opacity-50"
+                title={selected.active ? "Run a scrape now" : "Competitor is paused"}
+              >
+                Run now
+              </button>
               <button
                 type="button"
                 disabled={pending}
