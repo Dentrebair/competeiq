@@ -75,11 +75,13 @@ export function normalizeConfidence(raw: string | null | undefined): Confidence 
 }
 
 /**
- * Signal vocabulary comes from lib/signals.ts, NOT lib/n8n.ts.
+ * Signal vocabulary comes from lib/signals.ts, which deliberately has no
+ * `server-only` marker.
  *
  * This module is reachable from lib/supabase/client.ts, which is a Client
- * Component. Importing it through the server-only n8n layer would pull
- * `server-only` into the browser bundle and fail the build.
+ * Component. Importing the vocabulary through a server-only module (like
+ * lib/anthropic.ts) would pull `server-only` into the browser bundle and fail
+ * the build.
  */
 export type { SignalType } from "@/lib/signals";
 import type { SignalType } from "@/lib/signals";
@@ -119,7 +121,7 @@ export type DigestPattern = {
   evidence_alert_ids: string[];
 }
 
-/** Token accounting written by n8n from the Claude response. */
+/** Token accounting written by the worker from the Claude response. */
 export type ClaudeUsage = {
   input_tokens?: number;
   output_tokens?: number;
@@ -132,8 +134,6 @@ export type Competitor = {
   name: string;
   domain: string;
   url: string;
-  /** One Apify task per competitor, set by the n8n Config Loader. */
-  apify_task_id: string | null;
   active: boolean;
   created_at: string;
 }
@@ -142,7 +142,7 @@ export type Alert = {
   /** bigint sequence, not uuid. Arrives as a JS number. */
   id: number;
   created_at: string;
-  /** Which n8n workflow produced this — e.g. "WF-02". */
+  /** Which pipeline produced this — "worker" now; "WF-02" on rows from before cutover. */
   workflow: string;
   execution_id: string | null;
   competitor_id: string | null;
@@ -177,7 +177,7 @@ export type Alert = {
    */
   ai_available: boolean;
 
-  // Added by 05-intelligence-layer.sql. Both owned by n8n.
+  // Added by 05-intelligence-layer.sql. Both owned by the worker.
 
   /**
    * Two or three sentences on what this change does to the operator's position.
@@ -225,18 +225,16 @@ export type Digest = {
 /**
  * Per-signal monitoring config. Added by supabase/02-signal-configs.sql.
  *
- * `signal_type` is typed from SIGNAL_TYPES in lib/n8n.ts rather than redeclared,
- * because that list is the wire contract with n8n's Config Loader. One definition,
- * so a rename cannot drift between the payload and the table.
+ * `signal_type` is typed from SignalType in lib/signals.ts rather than
+ * redeclared, so a rename cannot drift between that vocabulary and this table.
  */
 export type SignalConfig = {
   id: string;
   competitor_id: string;
   signal_type: SignalType;
-  /** Hours between runs; n8n converts to a cron expression. 1–168. */
+  /** Hours between runs; converted to a pg-boss cron via lib/scheduling.ts. 1–168. */
   frequency_hours: number;
   enabled: boolean;
-  apify_schedule_id: string | null;
   last_run_at: string | null;
   last_error: string | null;
   created_at: string;
@@ -246,8 +244,8 @@ export type SignalConfig = {
 /* ===========================================================================
  * Added by 05-intelligence-layer.sql.
  *
- * Ownership inverts here. In everything above, n8n produces and the app reads;
- * these five are produced by the APP, because chat and on-demand analysis are
+ * Ownership inverts here. In everything above, the worker produces and the app
+ * reads; these five are produced by the APP, because chat and on-demand analysis are
  * its own Claude calls. The Insert/Update shapes below mirror the column grants
  * in 05 exactly — anything absent from them is absent from the grant too, and
  * writing it fails at the database rather than in review.
@@ -271,8 +269,9 @@ export type CatalogueSource = "confirmed" | "page_data" | "inferred";
  * on `singleton` rather than by convention.
  *
  * Every field here exists to stop Claude reasoning about the operator's position
- * from competitor data alone. Both n8n workflows read it as context, and so do
- * the app's chat and analysis calls.
+ * from competitor data alone. generate_digest reads it as context (process_apify_run
+ * never has — WF-02's real deployed prompt never gained that block either, see
+ * docs/n8n-claude-calls.md), and so do the app's chat and analysis calls.
  *
  * `audience` and `positioning` are always inferred, at every catalogue_source
  * tier — no storefront publishes machine-readable positioning. Do not render
@@ -393,9 +392,10 @@ export type Message = {
 }
 
 /**
- * `competitor_products` is deliberately absent. RLS is enabled on it with zero
- * policies, so the app cannot read it — it is n8n's price-diffing state, and the
- * app gets product detail from the denormalised product_* columns on alerts.
+ * `competitor_products` is deliberately absent. RLS grants the app's roles no
+ * policy on it, so the app cannot read it — it is the worker's price-diffing
+ * state (the Baseline), and the app gets product detail from the denormalised
+ * product_* columns on alerts.
  * Adding a type here would imply the app has access it does not have.
  */
 
@@ -418,7 +418,6 @@ export interface Database {
     Tables: {
       competitors: {
         Row: Competitor;
-        /** `apify_task_id` omitted — n8n owns it, same as apify_schedule_id. */
         Insert: Pick<Competitor, "name" | "domain" | "url"> &
           Partial<Pick<Competitor, "id" | "active">>;
         Update: Partial<Pick<Competitor, "name" | "domain" | "url" | "active">>;
@@ -427,7 +426,7 @@ export interface Database {
       alerts: {
         Row: Alert;
         /**
-         * The app never inserts alerts — n8n does, with the service role.
+         * The app never inserts alerts — the worker does, as pipeline_worker.
          *
          * `Record<string, never>` rather than `never`: supabase-js requires each
          * table to satisfy `GenericTable`, whose `Insert` must extend
@@ -447,12 +446,12 @@ export interface Database {
       signal_configs: {
         Row: SignalConfig;
         /**
-         * `apify_schedule_id`, `last_run_at`, and `last_error` are absent on
-         * purpose — n8n owns them. The app declares desired state (which signals,
-         * how often); n8n reconciles that with Apify and writes the result back.
+         * `last_run_at` and `last_error` are absent on purpose — the worker owns
+         * them. The app declares desired state (which signals, how often); the
+         * worker reconciles the pg-boss schedule and writes run status back.
          * Column grants in 03-ownership-hardening.sql enforce this at the
-         * database, so a mistake here fails rather than silently clobbering the
-         * schedule id n8n needs in order to cancel the right Apify schedule.
+         * database, so a mistake here fails rather than silently clobbering
+         * status the worker's health bar depends on.
          */
         Insert: Pick<SignalConfig, "competitor_id" | "signal_type"> &
           Partial<Pick<SignalConfig, "id" | "frequency_hours" | "enabled">>;
@@ -461,9 +460,9 @@ export interface Database {
       };
       digests: {
         Row: Digest;
-        /** The app inserts only the lock row; WF-03 fills in the content. */
+        /** The app inserts only the lock row; the worker fills in the content. */
         Insert: { status?: "generating" };
-        /** WF-03 owns digest content. Same GenericTable reason as alerts.Insert. */
+        /** The worker owns digest content. Same GenericTable reason as alerts.Insert. */
         Update: Record<string, never>;
         Relationships: [];
       };

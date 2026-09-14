@@ -28,7 +28,7 @@ function queue(): Promise<PgBoss> {
       schedule: false,
     });
     boss.on("error", (error) => {
-      // eslint-disable-next-line no-console
+       
       console.error(JSON.stringify({ event: "queue_error", message: error.message }));
     });
     return boss.start();

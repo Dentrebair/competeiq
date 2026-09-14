@@ -4,6 +4,8 @@ import { requireEnv } from "@/lib/env";
 import { databaseConnection } from "@/lib/queue/connection";
 import type { AlertRow, BaselineEntry, BaselineRow } from "@/lib/pipeline/signal-evaluation";
 import type { BaselineHistoryRow } from "@/lib/pipeline/baseline-history";
+import type { DigestAlertInput, BrandProfileInput } from "@/lib/pipeline/digest-request";
+import type { ClaudeUsage, DigestPattern, PriorityAction } from "@/lib/types/database";
 
 /**
  * The worker's own connection to Postgres, as the scoped `pipeline_worker`
@@ -221,5 +223,122 @@ export async function recordRunError(competitorId: string, message: string): Pro
   await db.query(
     `update public.signal_configs set last_error = $2 where competitor_id = $1`,
     [competitorId, message],
+  );
+}
+
+export interface DigestLockRow {
+  id: string;
+}
+
+/** The lock row the app's requestDigest() already inserted. Null if it's not (or no longer) 'generating'. */
+export async function getDigestLock(digestId: string): Promise<DigestLockRow | null> {
+  const db = getPipelineDb();
+  const { rows } = await db.query<DigestLockRow>(
+    `select id from public.digests where id = $1 and status = 'generating'`,
+    [digestId],
+  );
+  return rows[0] ?? null;
+}
+
+/** Every unread alert — WF-03 never filtered by a time window either (docs/n8n-claude-calls.md § 2). */
+export async function getUnreadAlertsForDigest(): Promise<DigestAlertInput[]> {
+  const db = getPipelineDb();
+  const { rows } = await db.query<DigestAlertInput>(
+    `select id, competitor_name, signal_type, severity, summary, impact, recommended_action, created_at
+       from public.alerts
+      where is_read = false
+      order by created_at desc`,
+  );
+  return rows;
+}
+
+/** All monitored competitors, not just the ones with alerts — quiet_competitors needs the full roster. */
+export async function getActiveCompetitorNames(): Promise<string[]> {
+  const db = getPipelineDb();
+  const { rows } = await db.query<{ name: string }>(
+    `select name from public.competitors where active order by name`,
+  );
+  return rows.map((row) => row.name);
+}
+
+/** Null until onboarding has run — the digest degrades to generalising, same as WF-02/WF-03 did. */
+export async function getBrandProfileForDigest(): Promise<BrandProfileInput | null> {
+  const db = getPipelineDb();
+  const { rows } = await db.query<BrandProfileInput>(
+    `select url, name, categories, price_min, price_max, currency, positioning, priorities, catalogue_source
+       from public.brand_profile
+      limit 1`,
+  );
+  return rows[0] ?? null;
+}
+
+/**
+ * Where the previous digest's window ended, so consecutive digests don't gap
+ * or overlap in their reported period. Null on the first digest ever.
+ */
+export async function getLastReadyDigestPeriodEnd(): Promise<Date | null> {
+  const db = getPipelineDb();
+  const { rows } = await db.query<{ period_end: string | null }>(
+    `select period_end from public.digests
+      where status = 'ready' and period_end is not null
+      order by generated_at desc nulls last
+      limit 1`,
+  );
+  return rows[0]?.period_end ? new Date(rows[0].period_end) : null;
+}
+
+export interface WriteDigestReadyParams {
+  digestId: string;
+  headline: string;
+  priorityAction: PriorityAction;
+  patterns: DigestPattern[];
+  quietCompetitors: string[];
+  alertIds: number[];
+  periodStart: Date;
+  periodEnd: Date;
+  claudeUsage: ClaudeUsage;
+}
+
+/** `where status = 'generating'` matches WF-03's own PATCH — updates the lock row, never inserts a new one. */
+export async function writeDigestReady(params: WriteDigestReadyParams): Promise<void> {
+  const db = getPipelineDb();
+  await db.query(
+    `update public.digests set
+       status = 'ready',
+       headline = $2,
+       priority_action = $3,
+       patterns = $4,
+       quiet_competitors = $5,
+       alert_ids = $6,
+       alert_count = $7,
+       period_start = $8,
+       period_end = $9,
+       claude_usage = $10,
+       generated_at = now()
+     where id = $1 and status = 'generating'`,
+    [
+      params.digestId,
+      params.headline,
+      JSON.stringify(params.priorityAction),
+      JSON.stringify(params.patterns),
+      params.quietCompetitors,
+      params.alertIds,
+      params.alertIds.length,
+      params.periodStart.toISOString(),
+      params.periodEnd.toISOString(),
+      JSON.stringify(params.claudeUsage),
+    ],
+  );
+}
+
+/**
+ * Terminal, not retried (mirrors WF-03: "still PATCH the row — set
+ * status='failed'... leaving it at 'generating' is the one outcome to avoid").
+ */
+export async function writeDigestFailure(digestId: string, message: string): Promise<void> {
+  const db = getPipelineDb();
+  await db.query(
+    `update public.digests set status = 'failed', error = $2 where id = $1 and status = 'generating'`,
+    [digestId, message],
   );
 }

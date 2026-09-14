@@ -3,7 +3,8 @@
 import { revalidatePath } from "next/cache";
 
 import { requireUser } from "@/lib/dal";
-import { triggerConfigLoader, type SignalConfigPayload } from "@/lib/n8n";
+import { enqueue, isQueueConfigured, setSchedule, clearSchedule } from "@/lib/queue/intake";
+import { scheduleFor } from "@/lib/scheduling";
 import { DEFAULT_FREQUENCY_HOURS, SIGNAL_TYPES, type SignalType } from "@/lib/signals";
 import { createClient } from "@/lib/supabase/server";
 
@@ -12,8 +13,8 @@ export interface CompetitorActionState {
   /** Hard failure — nothing was saved. */
   error: string | null;
   /**
-   * Saved to Supabase, but the n8n hand-off did not land. The competitor exists
-   * and is editable; it simply is not scheduled in Apify yet.
+   * Saved to Supabase, but the schedule sync did not land. The competitor
+   * exists and is editable; it simply is not scheduled to scrape yet.
    */
   warning: string | null;
 }
@@ -37,29 +38,32 @@ function deriveDomain(rawUrl: string): string | null {
 }
 
 /**
- * Push a competitor's full desired config to n8n.
+ * Reconcile a competitor's pg-boss schedule with its current desired state —
+ * replaces n8n's Config Loader (ADR-0005). Always reads the competitor's full
+ * current state back out of Supabase rather than trusting the caller, since
+ * "should this be scheduled, and how often" depends on all seven signals plus
+ * `active`, not just whatever one field just changed.
  *
- * The Config Loader contract sends *all seven* signal configs every time, not a
- * delta — n8n reconciles the whole set against Apify. So this reads current state
- * back out of Supabase rather than trusting the caller to assemble it.
+ * One schedule per competitor (not one per signal, unlike n8n's Apify
+ * Schedules) — a single scrape produces price, catalog and promo signals
+ * together, so there is nothing to gain from scheduling them separately.
  */
-async function pushConfigToN8n(
+async function syncCompetitorSchedule(
   competitorId: string,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!isQueueConfigured()) {
+    return { ok: false, error: "The pipeline queue is not configured." };
+  }
+
   const supabase = await createClient();
 
-  const [{ data: competitor, error: cErr }, { data: configs, error: sErr }] =
-    await Promise.all([
-      supabase
-        .from("competitors")
-        .select("id, name, url")
-        .eq("id", competitorId)
-        .single(),
-      supabase
-        .from("signal_configs")
-        .select("signal_type, frequency_hours, enabled")
-        .eq("competitor_id", competitorId),
-    ]);
+  const [{ data: competitor, error: cErr }, { data: configs, error: sErr }] = await Promise.all([
+    supabase.from("competitors").select("id, active").eq("id", competitorId).single(),
+    supabase
+      .from("signal_configs")
+      .select("signal_type, frequency_hours, enabled")
+      .eq("competitor_id", competitorId),
+  ]);
 
   if (cErr || !competitor) {
     return { ok: false, error: cErr?.message ?? "Competitor not found." };
@@ -68,34 +72,41 @@ async function pushConfigToN8n(
     return { ok: false, error: sErr?.message ?? "Could not read signal configs." };
   }
 
-  const payload: SignalConfigPayload[] = configs.map((c) => ({
-    signal_type: c.signal_type as SignalType,
-    frequency_hours: c.frequency_hours,
-    enabled: c.enabled,
-  }));
+  try {
+    const schedule = scheduleFor(
+      competitor.active,
+      configs.map((c) => ({
+        signal_type: c.signal_type as SignalType,
+        frequency_hours: c.frequency_hours,
+        enabled: c.enabled,
+      })),
+    );
 
-  const result = await triggerConfigLoader(
-    {
-      id: competitor.id,
-      name: competitor.name,
-      url: competitor.url,
-      // n8n expects both; they carry the same value today.
-      brand_name: competitor.name,
-    },
-    payload,
-  );
-
-  return result.ok ? { ok: true } : { ok: false, error: result.error };
+    if (schedule) {
+      await setSchedule(
+        "start_scrape",
+        competitorId,
+        schedule.cron,
+        { competitorId },
+        { singletonKey: competitorId },
+      );
+    } else {
+      await clearSchedule("start_scrape", competitorId);
+    }
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Could not sync the schedule." };
+  }
 }
 
 /**
  * Add a competitor and seed its seven signals.
  *
- * Order matters, and the failure mode is deliberate: Supabase first, n8n second.
- * If the n8n hand-off fails we keep the competitor and report a warning rather
- * than rolling back — a competitor that exists but is not yet scheduled is
- * recoverable with one click, whereas losing the operator's typed input to a
- * transient webhook timeout is not.
+ * Order matters, and the failure mode is deliberate: Supabase first, the
+ * schedule sync second. If the sync fails we keep the competitor and report a
+ * warning rather than rolling back — a competitor that exists but is not yet
+ * scheduled is recoverable with one click (Sync), whereas losing the
+ * operator's typed input to a transient queue error is not.
  */
 export async function addCompetitor(
   _prev: CompetitorActionState,
@@ -150,19 +161,19 @@ export async function addCompetitor(
     };
   }
 
-  const pushed = await pushConfigToN8n(competitor.id);
+  const synced = await syncCompetitorSchedule(competitor.id);
   revalidatePath("/competitors");
 
   return {
     ok: true,
     error: null,
-    warning: pushed.ok
+    warning: synced.ok
       ? null
-      : `${name} was saved, but n8n did not accept the schedule request: ${pushed.error} — use Sync to retry.`,
+      : `${name} was saved, but the schedule could not be set: ${synced.error} — use Sync to retry.`,
   };
 }
 
-/** Change one signal's cadence or on/off state, then re-push the whole set. */
+/** Change one signal's cadence or on/off state, then resync the competitor's schedule. */
 export async function updateSignalConfig(
   competitorId: string,
   signalType: SignalType,
@@ -181,38 +192,35 @@ export async function updateSignalConfig(
     return { ...EMPTY, error: error.message };
   }
 
-  const pushed = await pushConfigToN8n(competitorId);
+  const synced = await syncCompetitorSchedule(competitorId);
   revalidatePath("/competitors");
 
   return {
     ok: true,
     error: null,
-    warning: pushed.ok
-      ? null
-      : `Saved, but n8n did not accept the change: ${pushed.error} — use Sync to retry.`,
+    warning: synced.ok ? null : `Saved, but the schedule could not be updated: ${synced.error} — use Sync to retry.`,
   };
 }
 
-/** Retry the n8n hand-off for a competitor whose schedules never registered. */
+/** Retry the schedule sync for a competitor whose schedule never registered. */
 export async function syncCompetitor(competitorId: string): Promise<CompetitorActionState> {
   await requireUser();
 
-  const pushed = await pushConfigToN8n(competitorId);
+  const synced = await syncCompetitorSchedule(competitorId);
   revalidatePath("/competitors");
 
-  return pushed.ok
+  return synced.ok
     ? { ok: true, error: null, warning: null }
-    : { ...EMPTY, error: pushed.error };
+    : { ...EMPTY, error: synced.error };
 }
 
 /**
  * Pause or resume a competitor.
  *
- * This is the everyday alternative to deleting. A hard delete is blocked by a
- * database trigger while any Apify schedule is still registered, because the
- * cascade would destroy the schedule ids n8n needs in order to cancel them —
- * leaving the schedules running, scraping and billing with nothing pointing at
- * them. See supabase/03-ownership-hardening.sql.
+ * This is the everyday alternative to deleting — there is no delete button,
+ * deliberately (see components/competitors/monitoring.tsx). Pausing clears
+ * the pg-boss schedule immediately rather than waiting for a manual Sync,
+ * since the entire point of pausing is that scraping stops now.
  */
 export async function setCompetitorActive(
   competitorId: string,
@@ -230,6 +238,44 @@ export async function setCompetitorActive(
     return { ...EMPTY, error: error.message };
   }
 
+  const synced = await syncCompetitorSchedule(competitorId);
   revalidatePath("/competitors");
-  return { ok: true, error: null, warning: null };
+
+  return {
+    ok: true,
+    error: null,
+    warning: synced.ok
+      ? null
+      : `${active ? "Resumed" : "Paused"}, but the schedule could not be updated: ${synced.error} — use Sync to retry.`,
+  };
+}
+
+/**
+ * Run Now — replaces n8n's Manual Trigger. Enqueues the same start_scrape job
+ * the competitor's own schedule would fire, immediately.
+ *
+ * Not wired to any button yet — no "Run Now" UI exists in this codebase. This
+ * exists so the capability is complete in code; wiring a control to it is a
+ * separate UI task.
+ *
+ * Deliberately not deduped beyond the queue's own "short" policy (at most one
+ * start_scrape waiting per competitor) — a second click while one is already
+ * queued collapses harmlessly rather than erroring.
+ */
+export async function runCompetitorNow(competitorId: string): Promise<CompetitorActionState> {
+  await requireUser();
+
+  if (!isQueueConfigured()) {
+    return { ...EMPTY, error: "The pipeline queue is not configured." };
+  }
+
+  try {
+    await enqueue("start_scrape", { competitorId }, { singletonKey: competitorId });
+    return { ok: true, error: null, warning: null };
+  } catch (error) {
+    return {
+      ...EMPTY,
+      error: error instanceof Error ? error.message : "Could not queue the scrape.",
+    };
+  }
 }

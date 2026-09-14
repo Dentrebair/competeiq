@@ -2,7 +2,7 @@
 
 import { requireUser } from "@/lib/dal";
 import { isDigestStale } from "@/lib/digest";
-import { triggerDigest } from "@/lib/n8n";
+import { enqueue, isQueueConfigured } from "@/lib/queue/intake";
 import { createClient } from "@/lib/supabase/server";
 import type { Digest } from "@/lib/types/database";
 
@@ -11,15 +11,17 @@ import type { Digest } from "@/lib/types/database";
  *
  * The sequence is a lock protocol, not a fetch:
  *
- *   1. reap any lock left behind by a WF-03 run that died mid-flight
+ *   1. reap any lock left behind by a generate_digest run that died mid-flight
  *   2. read the newest digest and decide whether one is actually due
  *   3. INSERT status='generating' — the partial unique index makes "only one run
  *      at a time" a database guarantee rather than an application hope
- *   4. POST the Digest webhook, which answers 202 and keeps working
- *   5. WF-03 PATCHes the lock row to 'ready'; the browser sees it over Realtime
+ *   4. enqueue generate_digest — a direct insert into the worker's own queue,
+ *      not an HTTP round trip, so there is no ambiguous timeout case the way
+ *      an n8n webhook call had
+ *   5. the worker PATCHes the lock row to 'ready'; the browser sees it over Realtime
  *
  * Step 4 never returns the digest. Anything that waits on this call for content
- * is misreading the design — see the timeout note in lib/n8n.ts.
+ * is misreading the design.
  */
 
 /** Postgres unique_violation — someone else already holds the digest lock. */
@@ -30,9 +32,9 @@ export type DigestOutcome =
   | "fresh"
   /** A run is in flight. Wait for Realtime; do not call again. */
   | "generating"
-  /** We took the lock and n8n accepted the job. */
+  /** We took the lock and the job was queued. */
   | "requested"
-  /** n8n could not be reached or is not configured. No run is happening. */
+  /** The queue could not be reached or is not configured. No run is happening. */
   | "unavailable";
 
 export interface DigestRequestResult {
@@ -92,9 +94,9 @@ export async function requestDigest(force = false): Promise<DigestRequestResult>
   await requireUser();
   const supabase = await createClient();
 
-  // A WF-03 run that dies without PATCHing leaves 'generating' behind forever,
-  // and every future request is then rejected by the unique index. Clearing that
-  // first is why the reaper exists — 15 minutes is its default.
+  // A generate_digest run that dies without writing 'ready' leaves 'generating'
+  // behind forever, and every future request is then rejected by the unique
+  // index. Clearing that first is why the reaper exists — 15 minutes is its default.
   await supabase.rpc("reap_stale_digests", {});
 
   const latest = await latestDigest(supabase);
@@ -111,8 +113,12 @@ export async function requestDigest(force = false): Promise<DigestRequestResult>
     return { outcome: "fresh", digest: ready, error: null };
   }
 
-  // Take the lock before calling n8n, never after. The window between "webhook
-  // accepted" and "row inserted" is exactly where duplicate Opus 5 runs live.
+  if (!isQueueConfigured()) {
+    return { outcome: "unavailable", digest: ready, error: "The pipeline queue is not configured." };
+  }
+
+  // Take the lock before enqueuing, never after. The window between "job
+  // queued" and "row inserted" is exactly where duplicate Opus 5 runs live.
   const { data: lock, error: lockError } = await supabase
     .from("digests")
     .insert({ status: "generating" })
@@ -134,35 +140,22 @@ export async function requestDigest(force = false): Promise<DigestRequestResult>
 
   const lockRow = lock as Digest;
 
-  // Sent as diagnostic context only. WF-03 does not branch on it — the app has
-  // already decided, above, that a run is warranted.
-  const result = await triggerDigest(ready?.generated_at ?? null, force);
-
-  if (result.ok) {
+  // enqueue() is a direct database insert, not an HTTP round trip — it either
+  // queues the job or throws. There is no ambiguous timeout case the way an
+  // n8n webhook call had, so a failure here is always definitively rejected:
+  // release the lock immediately rather than waiting for the 15-minute reaper.
+  try {
+    const jobId = await enqueue("generate_digest", { digestId: lockRow.id }, { singletonKey: lockRow.id });
+    if (!jobId) {
+      throw new Error("generate_digest was already queued for this digest.");
+    }
     return { outcome: "requested", digest: lockRow, error: null };
-  }
-
-  /*
-    Releasing the lock is the subtle part.
-
-    A 4xx/5xx or a configuration error means n8n definitively did not take the
-    job: hold the lock and the panel spins for 15 minutes over a typo'd URL. So
-    reap it immediately — the partial unique index guarantees the only
-    'generating' row in existence is the one we just inserted, which is what
-    makes a zero-age reap safe here.
-
-    A timeout or a connection error is NOT the same thing. WF-03 answers 202 and
-    then works for minutes; an aborted fetch may well have started a real run.
-    Releasing there would strand the digest, because WF-03 PATCHes
-    `?status=eq.generating` and would match nothing. Keep the lock and let the
-    normal 15-minute reaper decide.
-  */
-  const definitivelyRejected = typeof result.status === "number" || !result.retryable;
-
-  if (definitivelyRejected) {
+  } catch (error) {
     await supabase.rpc("reap_stale_digests", { max_age: "0 seconds" });
-    return { outcome: "unavailable", digest: ready, error: result.error };
+    return {
+      outcome: "unavailable",
+      digest: ready,
+      error: error instanceof Error ? error.message : "Could not queue the digest job.",
+    };
   }
-
-  return { outcome: "generating", digest: lockRow, error: result.error };
 }

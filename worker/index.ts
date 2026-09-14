@@ -5,6 +5,7 @@ import { log, logError } from "./log";
 import { startWorker } from "./worker";
 import { processApifyRun } from "./handlers/process-apify-run";
 import { startScrape } from "./handlers/start-scrape";
+import { generateDigest } from "./handlers/generate-digest";
 
 /**
  * Entry point for the Railway worker service: `npm run start:worker`.
@@ -15,6 +16,7 @@ import { startScrape } from "./handlers/start-scrape";
 const HANDLERS: JobHandlers = {
   process_apify_run: processApifyRun,
   start_scrape: startScrape,
+  generate_digest: generateDigest,
 };
 
 async function main(): Promise<void> {

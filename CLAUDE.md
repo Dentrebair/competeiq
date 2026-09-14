@@ -6,111 +6,108 @@ Single-client competitor intelligence platform for ecommerce and D2C brands. Mon
 ### Stack
 - Next.js 16.3.1 (App Router, Turbopack) + React 19.2 + Tailwind CSS v4
 - Supabase (PostgreSQL + Auth + Realtime)
-- n8n self-hosted at n8n.srv1816291.hstgr.cloud (orchestration engine)
-- Apify (data collection — Shopify scraper, FB Ads Library, Trustpilot, Website Change Monitor)
-- Claude via the Anthropic API. Automated calls (signal interpretation, digests) run in n8n — see `docs/n8n-claude-calls.md`. Operator-facing calls (chat, single-alert analysis) run in the app through `lib/anthropic.ts`.
-- Google Sheets (alert output and digest logging)
-- Resend (email delivery, sent from n8n)
+- A Railway worker (this repo, `worker/`) plus pg-boss on the Supabase session
+  pooler — the orchestration engine. n8n is fully retired; see "n8n retirement" below.
+- Apify (data collection — Shopify scraper today; FB Ads Library, Trustpilot,
+  Website Change Monitor are still `coming_soon` in `lib/signals.ts`)
+- Claude via the Anthropic API. Automated calls (signal interpretation, digests)
+  run in the worker — see `docs/n8n-claude-calls.md` for the prompts (ported
+  verbatim, still accurate). Operator-facing calls (chat, single-alert analysis)
+  run in the app through `lib/anthropic.ts`.
+- Resend (email delivery) — out of scope for the pipeline migration; not currently used by anything in this repo.
 
-**Node 20.9+ is required** by Next 16. The shell default here is Node 16, which
-fails outright. Use `nvm use 22` before any npm/next command.
+**Node 22.12+ is required** (pg-boss 12). Use `nvm use 22` before any npm/next command.
 
-### Migration away from n8n: in progress
+### n8n retirement: complete
 
-**n8n was undeployed on 2026-09-14, and Apify last ran on 2026-08-23.** Until the
-worker ships, nothing produces alerts or digests. Config Loader, Run Now and the
-digest request fail soft.
+**n8n was undeployed on 2026-09-14.** Every piece of pipeline logic it used to
+own now lives in this repository, in code, gated on parity fixtures and the
+Apify console showing no leftover schedules or tasks (both confirmed before
+`supabase/10-cutover-remove-apify.sql` ran). `docs/app-intelligence-migration-spec.md`
+and ADRs 0003–0006 record the design; don't re-open those decisions.
 
-The sections below describe the n8n-era system. Its data model and security rules
-still hold. Its n8n plumbing is being replaced. Read
-`docs/app-intelligence-migration-spec.md` and ADRs 0003–0006 before any pipeline,
-queue, scraping, digest-generation or deployment work. Don't re-open those
-decisions.
+What replaced what:
 
-In short:
-- a Railway worker plus pg-boss on the Supabase session pooler, connecting as a
-  scoped `pipeline_worker` role;
-- the worker owns the scrape clock, with no Apify tasks or schedules;
-- `/api/webhooks/apify` plus a delayed check;
-- deterministic signal type and severity, with Claude Haiku writing the words;
-- a direct cutover gated on parity fixtures.
+| n8n workflow | Replaced by |
+|---|---|
+| WF-02 (signal processor) | `worker/handlers/process-apify-run.ts` |
+| Config Loader | `syncCompetitorSchedule()` in `app/actions/competitors.ts` |
+| Manual Trigger (Run Now) | `runCompetitorNow()` in `app/actions/competitors.ts` — not wired to a UI button yet |
+| WF-03 (digest) | `worker/handlers/generate-digest.ts` |
+| Apify Tasks/Schedules | pg-boss schedules, one per active competitor, in `pgboss.schedule` |
 
-Rules in this file that flip **at cutover, not before**:
-- "n8n owns all pipeline logic";
-- "no inbound endpoint";
-- the Config Loader, Manual Trigger and Digest webhooks;
-- the `apify_task_id` / `apify_schedule_id` column ownership and the delete-order trigger;
-- Google Sheets output;
-- Node 20.9+ becomes Node 22.12+ (pg-boss 12).
+`lib/n8n.ts` is deleted. `N8N_WEBHOOK_*` env vars no longer exist anywhere.
+Apify tasks and Apify Schedules are no longer used — the worker starts every
+scrape itself, on its own pg-boss cron.
 
 ### Architecture
-The app is the interface layer only. The intelligence engine lives in n8n.
+The app is the interface layer. The intelligence engine is the worker — this
+repo's own code, not an external orchestrator.
 
 ```
-Apify (scheduled scrape)
-  └─ ACTOR.RUN.SUCCEEDED webhook ─> n8n WF-02
-       └─ diff vs previous snapshot ─> Claude ─> writes alerts to Supabase + Sheets
-                                                    │
-browser <──── Supabase Realtime (WebSocket) ────────┘
-  app ──── POST + x-webhook-secret ────> n8n   (outbound only)
+Worker's own pg-boss cron (per competitor, ADR-0005)
+  └─ start_scrape ─> runs the Apify Actor directly
+       └─ ACTOR.RUN.SUCCEEDED webhook ─> /api/webhooks/apify ─> enqueue process_apify_run
+            └─ diff vs previous Baseline ─> Claude ─> writes alerts + Baseline to Supabase
+                                                          │
+browser <──── Supabase Realtime (WebSocket) ──────────────┘
+  app ──── enqueue (pg-boss insert, as pipeline_intake) ────> worker   (outbound only)
 ```
 
-**The app never receives data from n8n over HTTP.** n8n writes to Supabase with
-the service role; the browser learns about it over a Realtime WebSocket straight
-to Supabase. Realtime does *not* call into Next.js route handlers — there is no
-inbound ingest endpoint, and adding one would break the property that alerts keep
-landing while the app is down or mid-deploy. WF-02 also has to *read* the previous
-snapshot to compute its diff, which is a second reason it talks to Supabase
-directly.
+**The app never receives data from the worker over HTTP.** The worker writes to
+Supabase as the scoped `pipeline_worker` role; the browser learns about it over a
+Realtime WebSocket straight to Supabase. Realtime does *not* call into Next.js
+route handlers. `/api/webhooks/apify` **is** an inbound HTTP endpoint (ADR-0005
+reversed the old "no inbound endpoint" rule) — but it only enqueues a job by run
+ID; the worker refetches the run and dataset from Apify itself and never trusts
+the webhook body.
 
-### n8n Workflows (already built)
-- WF-01: Manual test pipeline (dev use only)
-- WF-02: Production signal processor (webhook-driven, always running) — `claude-haiku-4-5`
-- WF-03: Digest generator (triggered on-demand by app, not cron) — `claude-opus-5`
-
-**WF-03's Webhook node must be set to Response Mode: Immediately**, with a
-"Respond to Webhook" node returning `202 Accepted` placed *before* any other
-processing. Opus 5 with thinking on runs for minutes; the workflow continues in
-the background, writes the finished digest to `digests`, and the app picks it up
-over Realtime.
+### Worker jobs (`lib/queue/jobs.ts`, handlers in `worker/handlers/`)
+- `start_scrape` — runs the Shopify scraper Actor for one competitor. Fired by
+  that competitor's pg-boss schedule, or by Run Now (`runCompetitorNow()`).
+- `check_apify_run` — the delayed backstop (~30 min after start) for a lost
+  completion webhook. **Not built yet.**
+- `process_apify_run` — replaces WF-02. Diffs the run against the Baseline,
+  calls Claude Haiku, writes alerts + Baseline in one transaction.
+- `generate_digest` — replaces WF-03. Claude Opus with thinking on, `effort:
+  high`, structured output via `jsonSchemaOutputFormat()`. Can run for minutes.
 
 Consequence for the UI, and it is not optional: **login must never block on the
 digest.** The page loads the alert feed from Supabase immediately and renders the
 digest section in a loading state; Realtime replaces it when the row lands. A
-timeout from `triggerDigest()` is therefore not necessarily a failure — the run
-may still be in progress.
+timeout from `requestDigest()` is not meaningful the way it used to be, though —
+enqueuing is a direct database insert, not an HTTP round trip, so it either
+queues the job or throws; there is no ambiguous "maybe it started" case anymore.
 
-### Two webhook directions — do not conflate them
+### Two directions between the app and the worker
 
-**Direction 1 — Apify → n8n.** Apify fires this itself when an actor run
-finishes; it is the Webhook trigger node in WF-02. **The app has no part in it.**
-There is no inbound endpoint in this codebase and there should never be one: WF-02
-writes to Supabase and the browser learns about it over Realtime, which is what
-keeps alerts landing while the app is down or mid-deploy.
+**Direction 1 — Apify → app → worker.** Apify fires `/api/webhooks/apify` itself
+when an Actor run finishes. The route validates `x-webhook-secret` in constant
+time, reads only `resource.id`, and enqueues `process_apify_run` — it does not
+process anything itself. The worker resolves which competitor the run belongs to
+from its own record (`scrape_runs`, supabase/08), never from the webhook body.
 
-**Direction 2 — App → n8n.** The only way the app talks to n8n. Four operator
-situations, three endpoints:
+**Direction 2 — App → worker, via the queue.** The only way the app reaches the
+worker. Four operator situations, all going through `lib/queue/intake.ts`
+(`enqueue`/`setSchedule`/`clearSchedule`), which is `server-only`:
 
-| # | Operator does | Endpoint | n8n does |
-|---|---|---|---|
-| 1 | Adds a competitor | Config Loader | Creates the Apify schedule for that competitor |
-| 2 | Changes monitoring frequency | Config Loader | Updates that competitor's Apify schedule |
-| 3 | Clicks Run Now on a competitor | Manual Trigger | Runs the Apify actor immediately |
-| 4 | Logs in with a stale digest (>6h) | Digest | Runs WF-03 |
+| # | Operator does | App does |
+|---|---|---|
+| 1 | Adds a competitor | `syncCompetitorSchedule()` sets a pg-boss schedule |
+| 2 | Changes monitoring frequency | `syncCompetitorSchedule()` updates it |
+| 3 | Clicks Run Now on a competitor | `runCompetitorNow()` enqueues `start_scrape` |
+| 4 | Logs in with a stale digest (>6h) | `requestDigest()` enqueues `generate_digest` |
 
-1 and 2 share one endpoint — there is no fourth webhook. All three go through
-`lib/n8n.ts`, which is `server-only`, so importing it into a Client Component is
-a build error rather than a leaked secret.
+1 and 2 share one function — there is no separate endpoint. Run Now acts on a
+competitor, not on one of its signals; there is no per-competitor Apify task
+anymore, so nothing needs reconciling at that level.
 
-Config is **per competitor** at the Apify level: one Apify task per competitor
-(`competitors.apify_task_id`), and Run Now acts on a competitor — not on one of
-its signals.
-
-Cadence, though, is **per signal**. `signal_configs` holds a row for each of the
-seven signals per competitor (`frequency_hours`, `enabled`), and n8n writes back
-the `apify_schedule_id` it gets from the Apify Schedules API. So the Config
-Loader payload always carries all seven, and the competitor is the unit of
-"which site", while the signal is the unit of "how often".
+Cadence is **per signal**. `signal_configs` holds a row for each of the seven
+signals per competitor (`frequency_hours`, `enabled`), and `syncCompetitorSchedule()`
+computes one pg-boss schedule per competitor at the fastest enabled, live
+signal's cadence (`lib/scheduling.ts`) — replacing the seven separate Apify
+Schedules n8n used to create per competitor. The competitor is still the unit of
+"which site"; the signal is still the unit of "how often".
 
 ### Database (Supabase)
 Run in order; every file is additive and idempotent.
@@ -125,16 +122,19 @@ Run in order; every file is additive and idempotent.
 | `05-intelligence-layer.sql` | `brand_profile`, `competitor_suggestions`, `alert_analyses`, `conversations`, `messages`; `alerts.impact`/`confidence` |
 | `06-dedupe-key-index-fix.sql` | Makes `alerts.dedupe_key` usable by `ON CONFLICT` |
 | `07-pipeline-worker.sql` | `pipeline_worker` / `pipeline_intake` logins, `pgboss` schema, `pipeline_state`, `baseline_history` |
+| `08-scrape-runs.sql` | `scrape_runs` — run→competitor lookup so `process_apify_run` never has to trust the webhook body |
+| `09-worker-reads-brand-profile.sql` | Grants `pipeline_worker` select on `brand_profile` (needed by `generate_digest`) |
+| `10-cutover-remove-apify.sql` | Drops `apify_task_id`, `apify_schedule_id`, and the delete-order trigger — destructive, gated on confirming the Apify console shows no live schedules/tasks first |
 
 > **The original Supabase project was deleted** (found 2026-09-14). A new project
-> is built by running 00 → 07 in order.
+> is built by running 00 → 10 in order.
 
 > The Supabase SQL Editor shows **only the last statement's result**. Files with
 > several verification queries appear to run only the last one — they don't, but
 > you won't see the earlier output. `04` folds every check into one query.
 
-Tables: `competitors`, `alerts`, `competitor_products` (n8n's) plus `digests`
-(added by the migration).
+Tables: `competitors`, `alerts`, `competitor_products` (the pipeline's) plus
+`digests`, `pipeline_state`, `baseline_history`, `scrape_runs` (added by the migration).
 
 Things that surprise people:
 - `alerts.id` is **bigint**, not uuid. `digests.alert_ids` is `bigint[]` to match.
@@ -145,12 +145,12 @@ Things that surprise people:
 - `alerts.ai_available = false` means the Claude call failed — the alert is
   *unclassified*, not low priority. Never render it as graded.
 - `competitor_products` is the pricing diff store (per-product `last_price`).
-  RLS on, zero policies: the app cannot read it, by design.
+  RLS on, zero policies for the app's roles: the app cannot read it, by design
+  (`pipeline_worker` can — that's the Baseline it diffs against).
 - `signal_configs` **does** exist (`02-signal-configs.sql`) and is read by
-  `app/competitors/page.tsx`. Earlier drafts of this file said otherwise; that
-  was wrong. One row per competitor per signal, holding cadence and n8n's
-  `apify_schedule_id`. What is per-competitor rather than per-signal is the
-  Apify *task* (`competitors.apify_task_id`) and Run Now.
+  `app/competitors/page.tsx`. One row per competitor per signal, holding cadence.
+  What is per-competitor rather than per-signal is the pg-boss schedule
+  (`lib/scheduling.ts`) and Run Now.
 
 ### One signal vocabulary
 
@@ -162,39 +162,41 @@ we monitor" and "what happened". Defined once in `lib/signals.ts`:
 `review_sentiment` · `website_change` · `newsletter`
 
 `lib/signals.ts` deliberately has **no `server-only` marker and no imports** — the
-browser feed needs these strings too. Putting them in `lib/n8n.ts` (which is
-server-only) drags `server-only` into the client bundle via
+browser feed needs these strings too. Putting them in a server-only module (like
+`lib/anthropic.ts`) would drag `server-only` into the client bundle via
 `lib/supabase/client.ts` → `lib/types/database.ts`.
 
 ### Who owns which column
 
-The app declares **desired** state. n8n reconciles it with Apify and writes back
+The app declares **desired** state. The worker reconciles it and writes back
 **actual** state. Enforced by column grants in `03-ownership-hardening.sql`, not
 by convention:
 
 | Column | Owner | App may write? |
 |---|---|---|
 | `competitors.name/domain/url/active` | app | yes |
-| `competitors.apify_task_id` | n8n | no |
 | `signal_configs.frequency_hours/enabled` | app | yes |
-| `signal_configs.apify_schedule_id` | n8n | no |
-| `signal_configs.last_run_at/last_error` | n8n | no |
+| `signal_configs.last_run_at/last_error` | worker | no |
 | `alerts.is_read/read_at` | app | yes |
-| everything else on `alerts` | n8n | no |
+| everything else on `alerts` | worker | no |
 
-n8n populates `apify_schedule_id` after calling the Apify Schedules API, so that
-when a signal is disabled or a competitor removed it knows which schedule to
-cancel without interrogating Apify.
+`competitors.apify_task_id` and `signal_configs.apify_schedule_id` existed for
+this same purpose in the n8n era and are now dropped (`10-cutover-remove-apify.sql`)
+— the worker's schedule lives in `pgboss.schedule`, not on these tables at all.
 
-> **Deleting a competitor has an order dependency.** `signal_configs` cascades on
-> delete, so removing a competitor destroys every `apify_schedule_id` in the same
-> statement — and any still-live Apify schedule keeps running, keeps scraping and
-> keeps billing with nothing referencing it. A trigger blocks the delete while a
-> live schedule exists. Correct teardown: set `active = false` → call n8n to
-> cancel → n8n NULLs `apify_schedule_id` → delete. Prefer soft delete.
+> **There is no delete-competitor UI** (`components/competitors/monitoring.tsx`:
+> "No delete button, deliberately"). The old delete-order trigger that blocked a
+> hard delete while an Apify schedule was still live is gone along with Apify
+> Schedules themselves (`10-cutover-remove-apify.sql`) — it is **not** replaced by
+> an equivalent guard for the pg-boss schedule. If a delete feature is ever added,
+> clear that competitor's schedule first (`clearSchedule()` from
+> `lib/queue/intake.ts`, the same call `syncCompetitorSchedule()` makes when
+> pausing) or a deleted competitor's scrape keeps firing on its old cron,
+> failing forever with "competitor not found." Soft delete (`active = false`,
+> which already clears the schedule) remains the everyday path.
 
 ### Key rules
-- n8n owns all pipeline logic until cutover (see "Migration away from n8n"). The app never processes signals directly.
+- The worker owns all pipeline logic (see "n8n retirement"). The app never processes signals directly — it only enqueues jobs and reads results over Realtime.
 - **`lib/dal.ts` is the authorization boundary, not `proxy.ts`.** Every Server
   Component, Route Handler, and Server Action that touches operator data calls
   `requireUser()` first. Proxy does session refresh and an optimistic bounce only.
@@ -232,11 +234,10 @@ See `.env.local.example`. Only these:
 ```
 NEXT_PUBLIC_SUPABASE_URL
 NEXT_PUBLIC_SUPABASE_ANON_KEY
-N8N_WEBHOOK_SECRET
-N8N_WEBHOOK_CONFIG_LOADER
-N8N_WEBHOOK_MANUAL_TRIGGER
-N8N_WEBHOOK_DIGEST
-ANTHROPIC_API_KEY   # chat and single-alert analysis only; blank = those report unavailable
+ANTHROPIC_API_KEY        # web AND worker both need their own copy — see .env.local.example
+APIFY_API_TOKEN          # worker service only
+APP_URL                  # worker service only — the WEB app's public URL, not the worker's
+APIFY_WEBHOOK_SECRET     # both services — worker sets it, web's webhook route checks it
 PIPELINE_WORKER_DATABASE_URL   # worker service only
 PIPELINE_INTAKE_DATABASE_URL   # web service only
 ```
@@ -245,74 +246,63 @@ Both pipeline URLs connect through the session pooler, with TLS verified against
 `certs/supabase-ca.crt`. Run the worker locally with `npm run dev:worker`, and the
 queue tests (local Postgres 16+) with `npm run test:queue`.
 
-### Build status (updated 2026-09-14)
+### Build status (updated 2026-09-14 — n8n cutover complete)
 
-**Step 3 complete (Worker Foundation):**
-- Queue abstractions: `lib/queue/jobs.ts` (definitions), `lib/queue/connection.ts` (TLS),
-  `lib/queue/intake.ts` (website API)
-- Worker lifecycle: `worker/` (log, heartbeat, mode switch, graceful stop)
-- Integration tests: `test/queue/worker.integration.test.ts` + `scripts/test-queue.sh`
-- Node engine updated to >=22.12.0 (pg-boss requirement)
-- See `docs/step-3-worker-foundation.md` for full details
+**Foundation (Step 3):** queue abstractions (`lib/queue/jobs.ts`,
+`lib/queue/connection.ts` for TLS, `lib/queue/intake.ts` for the website side),
+worker lifecycle (`worker/` — log, heartbeat, mode switch, graceful stop),
+integration tests (`test/queue/worker.integration.test.ts` +
+`scripts/test-queue.sh`). See `docs/step-3-worker-foundation.md`.
 
-Handlers are empty (`HANDLERS` in `worker/index.ts`). Add them as each job is
-implemented (step 4 onward). The worker runs while handlers are built.
+Not here on purpose: `SUPABASE_SERVICE_ROLE_KEY` (neither service needs it —
+see "Key rules"), `RESEND_API_KEY` (email delivery is out of scope for this
+migration).
 
-Not here on purpose: `SUPABASE_SERVICE_ROLE_KEY` (n8n holds it),
-`RESEND_API_KEY` (called from n8n),
-`N8N_WEBHOOK_SIGNAL_PROCESSOR` (no such call — Apify triggers WF-02).
+**Working:** login, `proxy.ts` auth gate, alert feed over Realtime, competitor
+management (add/pause/resume/sync all reconcile a real pg-boss schedule now,
+not a dead webhook call), `process_apify_run` and `generate_digest` both built
+and unit-tested (mocked Apify/Claude/db — no live run through either has
+happened yet), the run→competitor lookup (`scrape_runs`), migrations 00→10 all
+written.
 
-### Build status (last updated 2026-08-18)
+**Built but not yet exercised end-to-end:** `start_scrape` has never actually
+started a real Apify run from a live schedule; `/api/webhooks/apify` doesn't
+exist yet, so the webhook path in the architecture diagram above is currently
+dead until that route is built (the delayed-check backstop, `check_apify_run`,
+also doesn't exist yet — see "Worker jobs"). Until both exist, a competitor's
+schedule fires `start_scrape` but nothing ever calls `process_apify_run` for
+it.
 
-**Working and verified in a browser:** login, `proxy.ts` auth gate (`/` → 307 →
-`/login`), alert feed reading real rows from Supabase, competitor management
-showing Death Wish Coffee with its 7 signals. Migrations 01–04 all applied.
-Anon key confirmed locked out of all five tables (`42501` on every one).
-
-**Built but unusable until n8n exists:** the three webhook calls in `lib/n8n.ts`.
-`.env.local` has the Supabase values filled and all `N8N_WEBHOOK_*` blank, so the
-app fails soft — competitors save and warn that n8n is unconfigured.
-
-**Built, awaiting WF-03:** the digest view — `components/digest-panel.tsx` on the
-dashboard, `app/actions/digest.ts`, `lib/digest.ts`. It renders whatever is in
-`digests` and subscribes for UPDATE, so it lights up the moment WF-03 PATCHes a
-row. With `N8N_WEBHOOK_DIGEST` blank it fails soft: it takes the lock, the webhook
-call fails as a configuration error, the lock is released immediately, and the
-panel says n8n is unreachable rather than spinning.
-
-The panel fires `requestDigest()` from a mount effect, never from the page's
-Server Component — that is what keeps login off the digest's critical path.
-
-**Never verified:** the Realtime smoke test. See `docs/WF-03-handoff.md`. The
-digest panel now depends on it: `digests` UPDATE is the only way a finished
-briefing reaches the browser.
+**Never verified:** the Realtime smoke test — whether a `digests` UPDATE or a
+new `alerts` row actually reaches a real browser tab. See `docs/WF-03-handoff.md`
+(written for the n8n era but the underlying Realtime mechanics are unchanged).
 
 ### Decisions made
-- **Releasing the digest lock on a failed webhook call is conditional.** A 4xx/5xx
-  or a missing env var means n8n definitively did not take the job, so
-  `app/actions/digest.ts` reaps the lock at zero age — safe only because the
-  partial unique index guarantees the one `'generating'` row is the one it just
-  inserted. A *timeout* is not the same: WF-03 answers 202 and then runs for
-  minutes, and releasing there would strand the result, since WF-03 PATCHes
-  `?status=eq.generating` and would match nothing. Those keep the lock and wait
-  for the 15-minute reaper.
-- **The app owns the 6-hour digest staleness check.** WF-03 ignores
-  `last_digest_at` / `force_refresh` and generates whenever it is called. The app
-  only calls it when a digest is genuinely due, and the partial unique index on
+- **Releasing the digest lock on a failed enqueue is unconditional.**
+  `enqueue()` is a direct database insert, not an HTTP round trip — it either
+  queues the job or throws. Unlike the old n8n webhook call, there is no
+  ambiguous "it may have started" timeout case, so `app/actions/digest.ts`
+  always reaps the lock at zero age on failure. Safe for the same reason as
+  before: the partial unique index guarantees the one `'generating'` row is the
+  one just inserted.
+- **The app owns the 6-hour digest staleness check.** `generate_digest` ignores
+  any notion of staleness and generates whenever it runs. The app only enqueues
+  it when a digest is genuinely due, and the partial unique index on
   `digests.status='generating'` prevents concurrent runs.
 
 ### Open
-- **Do Config Loader and Manual Trigger exist as live workflows?** Unknown.
-  Competitor management and Run Now are wired but dead without them.
-- **Config Loader must reconcile, not just apply.** The payload always carries all
-  seven signals. `enabled: false` on a signal with an `apify_schedule_id` means
-  *delete the Apify schedule and NULL the column* — skipping that leaves a
-  cancelled signal still scraping and still billing.
+- **`/api/webhooks/apify` and `check_apify_run` don't exist yet.** Until both
+  are built, a scheduled or manual scrape starts but its result is never
+  processed — see "Built but not yet exercised end-to-end" above.
+- **No delete-competitor UI exists**, and the schedule-orphan risk that creates
+  if one is ever added is documented but not guarded against — see the
+  callout under "Who owns which column."
 
 ### Handoff docs
-- `docs/WF-03-handoff.md` — checklist for building WF-03 in the n8n session
-- `docs/n8n-claude-calls.md` — request bodies, system prompts, JSON schemas
-- `docs/wiring-app-to-n8n.md` — connecting the two once the workflows exist
+- `docs/n8n-claude-calls.md` — the Claude prompts and schemas, ported verbatim
+  into `lib/pipeline/interpretation-prompt.ts` and `lib/pipeline/digest-prompt.ts`
+- `docs/WF-03-handoff.md`, `docs/wiring-app-to-n8n.md` — written for the n8n
+  session; historical only, since there is no more n8n session to hand off to
 
 ## Agent skills
 
