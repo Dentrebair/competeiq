@@ -2,7 +2,8 @@ import type { Job } from "pg-boss";
 
 import type { JobData } from "@/lib/queue/jobs";
 import { requireEnv } from "@/lib/env";
-import { logError } from "../log";
+import { log, logError } from "../log";
+import { updateScrapeRunStatus } from "../db";
 import { enqueueFromWorker } from "../queue-client";
 
 const APIFY_API_URL = "https://api.apify.com/v2";
@@ -28,6 +29,7 @@ export async function checkApifyRun(jobs: Job<JobData["check_apify_run"]>[]): Pr
 
 async function runCheck(runId: string, competitorId: string): Promise<void> {
   const run = await fetchApifyRun(runId);
+  log("check_apify_run_polled", { runId, competitorId, apifyStatus: run.status });
 
   if (run.status === "SUCCEEDED") {
     // The webhook made it through, or we're the backstop. Either way,
@@ -43,6 +45,8 @@ async function runCheck(runId: string, competitorId: string): Promise<void> {
   } else if (run.status === "FAILED" || run.status === "ABORTED") {
     // Apify failed or the run was stopped. Log it, don't enqueue the processor.
     // The competitor is waiting for the next scheduled start_scrape.
+    const message = `Apify run ${run.status.toLowerCase()}`;
+    await updateScrapeRunStatus(runId, "failed", message);
     console.error(
       JSON.stringify({
         event: "apify_run_terminal_failure",
@@ -53,7 +57,9 @@ async function runCheck(runId: string, competitorId: string): Promise<void> {
     );
   } else {
     // TIMED_OUT or other status — treat as an error (retryable).
-    throw new Error(`Apify run ${runId} has unexpected status: ${run.status}`);
+    const message = `Apify run ${runId} has unexpected status: ${run.status}`;
+    await updateScrapeRunStatus(runId, "failed", message);
+    throw new Error(message);
   }
 }
 

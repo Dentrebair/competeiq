@@ -13,6 +13,11 @@ const queueClient = vi.hoisted(() => ({
 }));
 vi.mock("@/worker/queue-client", () => queueClient);
 
+const db = vi.hoisted(() => ({
+  updateScrapeRunStatus: vi.fn(),
+}));
+vi.mock("@/worker/db", () => db);
+
 const { checkApifyRun } = await import("@/worker/handlers/check-apify-run");
 
 function jobFor(runId: string, competitorId: string): Job<JobData["check_apify_run"]>[] {
@@ -32,6 +37,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   process.env.APIFY_API_TOKEN = "test-token";
   queueClient.enqueueFromWorker.mockResolvedValue("job-id");
+  db.updateScrapeRunStatus.mockResolvedValue(undefined);
 });
 
 describe("checkApifyRun", () => {
@@ -57,7 +63,7 @@ describe("checkApifyRun", () => {
     );
   });
 
-  it("logs error and does not enqueue when run FAILED", async () => {
+  it("logs error, records the failure, and does not enqueue when run FAILED", async () => {
     const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     mockApifyCheckStatus("FAILED");
 
@@ -66,12 +72,17 @@ describe("checkApifyRun", () => {
     expect(consoleSpy).toHaveBeenCalledWith(
       expect.stringContaining("apify_run_terminal_failure"),
     );
+    expect(db.updateScrapeRunStatus).toHaveBeenCalledWith(
+      "run-xyz",
+      "failed",
+      expect.stringContaining("failed"),
+    );
     expect(queueClient.enqueueFromWorker).not.toHaveBeenCalled();
 
     consoleSpy.mockRestore();
   });
 
-  it("logs error and does not enqueue when run ABORTED", async () => {
+  it("logs error, records the failure, and does not enqueue when run ABORTED", async () => {
     const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     mockApifyCheckStatus("ABORTED");
 
@@ -80,16 +91,26 @@ describe("checkApifyRun", () => {
     expect(consoleSpy).toHaveBeenCalledWith(
       expect.stringContaining("apify_run_terminal_failure"),
     );
+    expect(db.updateScrapeRunStatus).toHaveBeenCalledWith(
+      "run-xyz",
+      "failed",
+      expect.stringContaining("aborted"),
+    );
     expect(queueClient.enqueueFromWorker).not.toHaveBeenCalled();
 
     consoleSpy.mockRestore();
   });
 
-  it("throws on unexpected status", async () => {
+  it("records the failure and throws on unexpected status", async () => {
     mockApifyCheckStatus("TIMED_OUT");
 
     await expect(checkApifyRun(jobFor("run-xyz", "comp-1"))).rejects.toThrow(
       "unexpected status: TIMED_OUT",
+    );
+    expect(db.updateScrapeRunStatus).toHaveBeenCalledWith(
+      "run-xyz",
+      "failed",
+      expect.stringContaining("TIMED_OUT"),
     );
   });
 });

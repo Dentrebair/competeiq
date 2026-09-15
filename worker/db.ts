@@ -82,6 +82,25 @@ export async function recordScrapeRun(runId: string, competitorId: string): Prom
   );
 }
 
+export type ScrapeRunStatus = "running" | "processing" | "succeeded" | "failed";
+
+/**
+ * Progress the run's status so the UI (Realtime on scrape_runs) can show what
+ * "Run Now" is doing. `error` is only meaningful for 'failed' — cleared
+ * otherwise so a retry's success doesn't leave a stale message behind.
+ */
+export async function updateScrapeRunStatus(
+  runId: string,
+  status: ScrapeRunStatus,
+  error?: string,
+): Promise<void> {
+  const db = getPipelineDb();
+  await db.query(
+    `update public.scrape_runs set status = $2, error = $3, updated_at = now() where run_id = $1`,
+    [runId, status, error ?? null],
+  );
+}
+
 /** The Baseline as it stood before this run. Empty means the competitor's first run. */
 export async function getBaseline(competitorId: string): Promise<BaselineEntry[]> {
   const db = getPipelineDb();

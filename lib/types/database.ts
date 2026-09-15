@@ -138,6 +138,24 @@ export type Competitor = {
   created_at: string;
 }
 
+export type ScrapeRunStatus = "running" | "processing" | "succeeded" | "failed";
+
+/**
+ * One row per Apify run start_scrape started. Not a long-lived table (see
+ * supabase/08-scrape-runs.sql) — this is "what is Run Now doing right now",
+ * not a run history. The browser reads it read-only (added in
+ * supabase/11-run-progress-and-delete.sql) purely to show progress; only the
+ * worker writes it.
+ */
+export type ScrapeRun = {
+  run_id: string;
+  competitor_id: string;
+  started_at: string;
+  status: ScrapeRunStatus;
+  error: string | null;
+  updated_at: string;
+}
+
 export type Alert = {
   /** bigint sequence, not uuid. Arrives as a JS number. */
   id: number;
@@ -463,6 +481,13 @@ export interface Database {
         /** The app inserts only the lock row; the worker fills in the content. */
         Insert: { status?: "generating" };
         /** The worker owns digest content. Same GenericTable reason as alerts.Insert. */
+        Update: Record<string, never>;
+        Relationships: [];
+      };
+      /** Read-only for the app (supabase/11) — the worker owns every write. */
+      scrape_runs: {
+        Row: ScrapeRun;
+        Insert: Record<string, never>;
         Update: Record<string, never>;
         Relationships: [];
       };

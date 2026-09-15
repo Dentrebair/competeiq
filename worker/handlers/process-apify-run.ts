@@ -12,8 +12,14 @@ import {
 import type { ApifyProduct, Interpretation, DetectedChange } from "@/lib/pipeline/signal-evaluation";
 import { baselineHistoryRows } from "@/lib/pipeline/baseline-history";
 import { requireEnv } from "@/lib/env";
-import { logError } from "../log";
-import { getCompetitorForRun, getBaseline, persistProcessedRun, recordRunError } from "../db";
+import { log, logError } from "../log";
+import {
+  getCompetitorForRun,
+  getBaseline,
+  persistProcessedRun,
+  recordRunError,
+  updateScrapeRunStatus,
+} from "../db";
 
 const APIFY_API_URL = "https://api.apify.com/v2";
 
@@ -47,6 +53,9 @@ async function processRun(job: Job<JobData["process_apify_run"]>): Promise<void>
     throw new Error(`No scrape_runs record for run ${runId} — cannot resolve its competitor`);
   }
 
+  log("process_apify_run_started", { runId, competitorId: competitor.id, name: competitor.name });
+  await updateScrapeRunStatus(runId, "processing");
+
   try {
     const run = await fetchApifyRun(runId);
     if (run.status !== "SUCCEEDED") {
@@ -62,9 +71,11 @@ async function processRun(job: Job<JobData["process_apify_run"]>): Promise<void>
     if (products.length === 0) {
       throw new Error(`Apify run ${runId} returned an empty dataset`);
     }
+    log("process_apify_run_dataset_fetched", { runId, productCount: products.length });
 
     const baseline = await getBaseline(competitor.id);
     const changes: DetectedChange[] = evaluateSignals(products, baseline, competitor);
+    log("process_apify_run_changes_evaluated", { runId, changeCount: changes.length });
 
     const interpretations = await Promise.all(
       changes.map((change) => callClaudeWithRetry(change)),
@@ -79,9 +90,13 @@ async function processRun(job: Job<JobData["process_apify_run"]>): Promise<void>
       baseline: baselineRows(products, competitor.id, now),
       baselineHistory: baselineHistoryRows(products, baseline, competitor.id, runId),
     });
+
+    await updateScrapeRunStatus(runId, "succeeded");
+    log("process_apify_run_succeeded", { runId, competitorId: competitor.id, alertCount: alerts.length });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     await recordRunError(competitor.id, message);
+    await updateScrapeRunStatus(runId, "failed", message);
     throw error;
   }
 }

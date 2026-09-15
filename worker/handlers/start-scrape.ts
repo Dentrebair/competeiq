@@ -2,7 +2,7 @@ import type { Job } from "pg-boss";
 
 import type { JobData } from "@/lib/queue/jobs";
 import { requireEnv } from "@/lib/env";
-import { logError } from "../log";
+import { log, logError } from "../log";
 import { getScrapeTarget, recordScrapeRun } from "../db";
 import { enqueueFromWorker } from "../queue-client";
 
@@ -41,8 +41,12 @@ async function runStartScrape(competitorId: string): Promise<void> {
     throw new Error(`No active competitor ${competitorId} to scrape`);
   }
 
+  log("start_scrape_started", { competitorId, name: competitor.name, url: competitor.url });
+
   const run = await startApifyRun(competitor.url);
   await recordScrapeRun(run.id, competitor.id);
+
+  log("start_scrape_run_created", { competitorId, runId: run.id });
 
   await enqueueFromWorker(
     "check_apify_run",

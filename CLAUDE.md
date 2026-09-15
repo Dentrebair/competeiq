@@ -126,9 +126,10 @@ Run in order; every file is additive and idempotent.
 | `08-scrape-runs.sql` | `scrape_runs` — run→competitor lookup so `process_apify_run` never has to trust the webhook body |
 | `09-worker-reads-brand-profile.sql` | Grants `pipeline_worker` select on `brand_profile` (needed by `generate_digest`) |
 | `10-cutover-remove-apify.sql` | Drops `apify_task_id`, `apify_schedule_id`, and the delete-order trigger — destructive, gated on confirming the Apify console shows no live schedules/tasks first |
+| `11-run-progress-and-delete.sql` | Fixes `alerts`/`competitor_products` FKs to `competitors` so a hard delete works; adds `status`/`error`/`updated_at` to `scrape_runs` plus Realtime, so the UI can show "Run Now" progress live |
 
 > **The original Supabase project was deleted** (found 2026-09-14). A new project
-> is built by running 00 → 10 in order.
+> is built by running 00 → 11 in order.
 
 > The Supabase SQL Editor shows **only the last statement's result**. Files with
 > several verification queries appear to run only the last one — they don't, but
@@ -136,6 +137,12 @@ Run in order; every file is additive and idempotent.
 
 Tables: `competitors`, `alerts`, `competitor_products` (the pipeline's) plus
 `digests`, `pipeline_state`, `baseline_history`, `scrape_runs` (added by the migration).
+
+`scrape_runs` is the only worker-owned table the browser can read (11 grants
+`authenticated` SELECT + Realtime) — purely so the UI can show "Run Now"
+progress (`running` → `processing` → `succeeded`/`failed`). Nothing else
+changes: the app still never writes it, and the worker is still the only
+writer of every column.
 
 Things that surprise people:
 - `alerts.id` is **bigint**, not uuid. `digests.alert_ids` is `bigint[]` to match.
@@ -185,16 +192,18 @@ by convention:
 this same purpose in the n8n era and are now dropped (`10-cutover-remove-apify.sql`)
 — the worker's schedule lives in `pgboss.schedule`, not on these tables at all.
 
-> **There is no delete-competitor UI** (`components/competitors/monitoring.tsx`:
-> "No delete button, deliberately"). The old delete-order trigger that blocked a
-> hard delete while an Apify schedule was still live is gone along with Apify
-> Schedules themselves (`10-cutover-remove-apify.sql`) — it is **not** replaced by
-> an equivalent guard for the pg-boss schedule. If a delete feature is ever added,
-> clear that competitor's schedule first (`clearSchedule()` from
-> `lib/queue/intake.ts`, the same call `syncCompetitorSchedule()` makes when
-> pausing) or a deleted competitor's scrape keeps firing on its old cron,
-> failing forever with "competitor not found." Soft delete (`active = false`,
-> which already clears the schedule) remains the everyday path.
+**Deleting a competitor** (`deleteCompetitor()` in `app/actions/competitors.ts`,
+wired to a two-click confirm in `components/competitors/monitoring.tsx`) does
+the guard the old delete-order trigger used to: `clearSchedule()` first, so a
+deleted competitor can't leave its pg-boss cron firing forever against an id
+that no longer resolves, then the row delete. `alerts.competitor_id` (`SET
+NULL`) and `competitor_products` (`CASCADE`) both had to be fixed in
+`11-run-progress-and-delete.sql` first — before that migration, deleting a
+competitor with any alert or baseline row failed outright on the default FK
+behavior. Soft delete (`setCompetitorActive(id, false)`, pause) is still the
+everyday action for "stop watching this for now"; hard delete is for "this
+was a mistake" or "gone for good" — alerts survive it (they keep their own
+`competitor_name`), everything else the worker owns does not.
 
 ### Key rules
 - The worker owns all pipeline logic (see "n8n retirement"). The app never processes signals directly — it only enqueues jobs and reads results over Realtime.
@@ -247,7 +256,7 @@ Both pipeline URLs connect through the session pooler, with TLS verified against
 `certs/supabase-ca.crt`. Run the worker locally with `npm run dev:worker`, and the
 queue tests (local Postgres 16+) with `npm run test:queue`.
 
-### Build status (updated 2026-09-14 — n8n cutover complete)
+### Build status (updated 2026-09-15 — n8n cutover complete, pipeline verified live)
 
 **Foundation (Step 3):** queue abstractions (`lib/queue/jobs.ts`,
 `lib/queue/connection.ts` for TLS, `lib/queue/intake.ts` for the website side),
@@ -259,24 +268,36 @@ Not here on purpose: `SUPABASE_SERVICE_ROLE_KEY` (neither service needs it —
 see "Key rules"), `RESEND_API_KEY` (email delivery is out of scope for this
 migration).
 
-**Working:** login, `proxy.ts` auth gate, alert feed over Realtime, competitor
-management (add/pause/resume/sync all reconcile a real pg-boss schedule now,
-not a dead webhook call), `process_apify_run` and `generate_digest` both built
-and unit-tested (mocked Apify/Claude/db — no live run through either has
-happened yet), the run→competitor lookup (`scrape_runs`), migrations 00→10 all
-written.
+**Working, verified against a real Apify run (see "Confirmed working
+end-to-end" under Open):** login, `proxy.ts` auth gate, alert feed over
+Realtime, competitor management (add/pause/resume/sync/**delete** all
+reconcile a real pg-boss schedule, not a dead webhook call), all four worker
+jobs (`start_scrape`, `check_apify_run`, `process_apify_run`,
+`generate_digest`), the webhook route (`/api/webhooks/apify`), the
+run→competitor lookup (`scrape_runs`), migrations 00→11.
 
-**Built but not yet exercised end-to-end:** All four handler jobs exist
-(`start_scrape`, `check_apify_run`, `process_apify_run`, `generate_digest`) and
-the webhook route (`/api/webhooks/apify`) is live. The Apify → app → worker
-pipeline is complete, but has never run against a real Apify run from a live
-schedule. To test: add a competitor, let the cron fire `start_scrape`, either
-wait for the webhook or for the ~30-min backstop to fire `check_apify_run`,
-confirm alerts land in Supabase and appear over Realtime in a browser tab.
+**UI, added after the first live test surfaced gaps in visibility:**
+- Per-competitor "Run now" button shows live progress (`RunProgress` in
+  `components/competitors/monitoring.tsx`, reading `scrape_runs` over
+  Realtime) — running → processing → succeeded/failed, not just a click that
+  might have done something.
+- Pause/resume is a one-click toggle directly on each competitor's card, not
+  just inside the detail panel.
+- A failing signal's `last_error` expands in place instead of only being
+  readable in a hover tooltip.
+- Hard delete (`deleteCompetitor()`), two-click confirm, clears the schedule
+  before the row delete.
+- Structured JSON logs (`console.error`/`log()`) added at every stage of
+  `start_scrape` / `check_apify_run` / `process_apify_run` and every app
+  action's failure path, specifically so a Railway log search on `event` can
+  answer "what did Run Now actually do" without guessing.
 
-**Never verified:** the Realtime smoke test — whether a `digests` UPDATE or a
-new `alerts` row actually reaches a real browser tab. See `docs/WF-03-handoff.md`
-(written for the n8n era but the underlying Realtime mechanics are unchanged).
+**Never verified:** the digest Realtime path specifically — whether a
+`digests` UPDATE reaches a real browser tab. The `alerts` half of Realtime
+delivery is now confirmed live; digest generation has not been triggered
+against a real Claude Opus call outside unit tests yet. See
+`docs/WF-03-handoff.md` (written for the n8n era but the underlying Realtime
+mechanics are unchanged).
 
 ### Decisions made
 - **Releasing the digest lock on a failed enqueue is unconditional.**
@@ -292,12 +313,24 @@ new `alerts` row actually reaches a real browser tab. See `docs/WF-03-handoff.md
   `digests.status='generating'` prevents concurrent runs.
 
 ### Open
-- **End-to-end test with a real Apify run:** Add a competitor, let its schedule
-  fire, confirm the run is processed and alerts appear in the browser over
-  Realtime. Document in `docs/` if there are surprises (timing, webhook delays, etc.).
-- **No delete-competitor UI exists**, and the schedule-orphan risk that creates
-  if one is ever added is documented but not guarded against — see the
-  callout under "Who owns which column."
+- **Rotate the credentials that were pasted into chat during setup**
+  (`PIPELINE_WORKER_DATABASE_URL`/`PIPELINE_INTAKE_DATABASE_URL` passwords,
+  `APIFY_API_TOKEN`) — advised during the live-test session, status unconfirmed.
+  Rotate via `alter role ... with password '<new>'` for each pipeline role and
+  regenerate the Apify token from the Apify Console, then update both
+  `.env.local` and the Railway env vars for both services.
+- Flip `pipeline_state.mode = 'live'` once satisfied with manual-trigger testing
+  (`update public.pipeline_state set mode = 'live';` — no `id` column, it's a
+  singleton row) so competitors' own schedules start firing without a manual
+  Run Now each time.
+
+**Confirmed working end-to-end (2026-09-15):** a real competitor
+(deathwishcoffee.com) went through the full chain — Run Now → `start_scrape` →
+Apify → webhook → `process_apify_run` → alerts written → visible in the
+browser over Realtime. A second competitor (zillow.myshopify.com) correctly
+produced no alerts because Apify itself rejected it as not a compatible
+Shopify store — proof the pipeline distinguishes a real scrape failure from
+"nothing changed" rather than silently swallowing it.
 
 ### Handoff docs
 - `docs/n8n-claude-calls.md` — the Claude prompts and schemas, ported verbatim

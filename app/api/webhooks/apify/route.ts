@@ -37,6 +37,14 @@ export async function POST(request: Request) {
   const expectedSecret = requireEnv("APIFY_WEBHOOK_SECRET");
 
   if (!headerSecret || !constantTimeEqual(headerSecret, expectedSecret)) {
+    // Never log either secret value — just enough to tell "no header sent" apart
+    // from "header sent, but doesn't match", since those point at different fixes.
+    console.error(
+      JSON.stringify({
+        event: "apify_webhook_unauthorized",
+        reason: headerSecret ? "secret_mismatch" : "missing_header",
+      }),
+    );
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -58,6 +66,7 @@ export async function POST(request: Request) {
   // one process_apify_run job exists per run — duplicate webhooks collapse.
   try {
     await enqueue("process_apify_run", { runId }, { singletonKey: runId });
+    console.log(JSON.stringify({ event: "apify_webhook_received", runId }));
     // Return 202 Accepted immediately — the actual processing happens async
     // in the background, same as generate_digest. The webhook body is gone by
     // the time the worker reads the run from Apify, so a disconnect here is safe.

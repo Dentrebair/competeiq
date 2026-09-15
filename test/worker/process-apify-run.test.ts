@@ -21,6 +21,7 @@ const db = vi.hoisted(() => ({
   getBaseline: vi.fn(),
   persistProcessedRun: vi.fn(),
   recordRunError: vi.fn(),
+  updateScrapeRunStatus: vi.fn(),
 }));
 vi.mock("@/worker/db", () => db);
 
@@ -71,6 +72,7 @@ beforeEach(() => {
   db.getBaseline.mockResolvedValue([]);
   db.persistProcessedRun.mockResolvedValue(undefined);
   db.recordRunError.mockResolvedValue(undefined);
+  db.updateScrapeRunStatus.mockResolvedValue(undefined);
 });
 
 describe("processApifyRun", () => {
@@ -97,6 +99,8 @@ describe("processApifyRun", () => {
     expect(call.baselineHistory).toEqual([
       expect.objectContaining({ product_handle: "widget", was_new: false, previous_price: 10, current_price: 20 }),
     ]);
+    expect(db.updateScrapeRunStatus).toHaveBeenCalledWith("run-1", "processing");
+    expect(db.updateScrapeRunStatus).toHaveBeenCalledWith("run-1", "succeeded");
   });
 
   it("writes an unclassified alert when Claude fails on every retry", async () => {
@@ -126,6 +130,11 @@ describe("processApifyRun", () => {
 
     await expect(processApifyRun(jobFor("run-4"))).rejects.toThrow(/not SUCCEEDED/);
     expect(db.recordRunError).toHaveBeenCalledWith("comp-1", expect.stringMatching(/not SUCCEEDED/));
+    expect(db.updateScrapeRunStatus).toHaveBeenCalledWith(
+      "run-4",
+      "failed",
+      expect.stringMatching(/not SUCCEEDED/),
+    );
   });
 
   it("throws and records the error when the run has no dataset", async () => {

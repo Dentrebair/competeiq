@@ -66,10 +66,14 @@ async function syncCompetitorSchedule(
   ]);
 
   if (cErr || !competitor) {
-    return { ok: false, error: cErr?.message ?? "Competitor not found." };
+    const message = cErr?.message ?? "Competitor not found.";
+    console.error(JSON.stringify({ event: "sync_schedule_failed", competitorId, stage: "read_competitor", error: message }));
+    return { ok: false, error: message };
   }
   if (sErr || !configs) {
-    return { ok: false, error: sErr?.message ?? "Could not read signal configs." };
+    const message = sErr?.message ?? "Could not read signal configs.";
+    console.error(JSON.stringify({ event: "sync_schedule_failed", competitorId, stage: "read_configs", error: message }));
+    return { ok: false, error: message };
   }
 
   try {
@@ -95,7 +99,9 @@ async function syncCompetitorSchedule(
     }
     return { ok: true };
   } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : "Could not sync the schedule." };
+    const message = error instanceof Error ? error.message : "Could not sync the schedule.";
+    console.error(JSON.stringify({ event: "sync_schedule_failed", competitorId, stage: "queue_write", error: message }));
+    return { ok: false, error: message };
   }
 }
 
@@ -254,10 +260,6 @@ export async function setCompetitorActive(
  * Run Now — replaces n8n's Manual Trigger. Enqueues the same start_scrape job
  * the competitor's own schedule would fire, immediately.
  *
- * Not wired to any button yet — no "Run Now" UI exists in this codebase. This
- * exists so the capability is complete in code; wiring a control to it is a
- * separate UI task.
- *
  * Deliberately not deduped beyond the queue's own "short" policy (at most one
  * start_scrape waiting per competitor) — a second click while one is already
  * queued collapses harmlessly rather than erroring.
@@ -273,9 +275,45 @@ export async function runCompetitorNow(competitorId: string): Promise<Competitor
     await enqueue("start_scrape", { competitorId }, { singletonKey: competitorId });
     return { ok: true, error: null, warning: null };
   } catch (error) {
-    return {
-      ...EMPTY,
-      error: error instanceof Error ? error.message : "Could not queue the scrape.",
-    };
+    const message = error instanceof Error ? error.message : "Could not queue the scrape.";
+    console.error(JSON.stringify({ event: "run_competitor_now_failed", competitorId, error: message }));
+    return { ...EMPTY, error: message };
   }
+}
+
+/**
+ * Hard delete. The everyday action is still pausing (setCompetitorActive) —
+ * this is for when a competitor was added by mistake or is gone for good.
+ *
+ * Schedule cleared first, deliberately: a delete that races a queued
+ * start_scrape would otherwise leave an orphaned schedule cron-ing forever
+ * against a competitor id that no longer resolves (see CLAUDE.md, "Who owns
+ * which column"). alerts.competitor_id and competitor_products cascade
+ * correctly as of supabase/11-run-progress-and-delete.sql — alerts survive
+ * with competitor_id set to null (they keep their own competitor_name),
+ * everything else the worker owns is deleted along with the competitor.
+ */
+export async function deleteCompetitor(competitorId: string): Promise<CompetitorActionState> {
+  await requireUser();
+
+  if (isQueueConfigured()) {
+    try {
+      await clearSchedule("start_scrape", competitorId);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not clear the schedule.";
+      console.error(JSON.stringify({ event: "delete_competitor_clear_schedule_failed", competitorId, error: message }));
+      return { ...EMPTY, error: `Could not clear the schedule before deleting: ${message}` };
+    }
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase.from("competitors").delete().eq("id", competitorId);
+
+  if (error) {
+    console.error(JSON.stringify({ event: "delete_competitor_failed", competitorId, error: error.message }));
+    return { ...EMPTY, error: error.message };
+  }
+
+  revalidatePath("/competitors");
+  return { ok: true, error: null, warning: null };
 }
