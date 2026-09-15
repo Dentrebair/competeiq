@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useId, useMemo, useState, useTransition } from "react";
 
 import {
   addCompetitor,
@@ -142,10 +142,21 @@ function RunProgress({
   // correctly resets the Realtime subscription below.
   const [run, setRun] = useState<ScrapeRun | null>(initial);
 
+  // Per-instance, not just per-competitor: this component now renders twice
+  // for the same competitor at once (its card in the grid, and the detail
+  // panel when it's selected). Supabase's client keys channels by name, so
+  // two instances sharing `scrape-runs-${competitorId}` collide — the second
+  // `.on()` call throws "cannot add postgres_changes callbacks ... after
+  // subscribe()" against the first instance's already-subscribed channel,
+  // an uncaught error that took the whole page down. Each instance getting
+  // its own unique channel name fixes that; both still filter on the same
+  // competitor_id and so both still receive every update.
+  const instanceId = useId();
+
   useEffect(() => {
     const supabase = createClient();
     const channel = supabase
-      .channel(`scrape-runs-${competitorId}`)
+      .channel(`scrape-runs-${competitorId}-${instanceId}`)
       .on(
         "postgres_changes",
         {
@@ -175,7 +186,7 @@ function RunProgress({
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [competitorId]);
+  }, [competitorId, instanceId]);
 
   if (!run) {
     return <span className="text-[13px] text-ink-faint">Never run</span>;
