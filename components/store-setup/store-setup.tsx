@@ -13,8 +13,10 @@ import type { BrandProfile } from "@/lib/types/database";
 
 export function StoreSetup({
   profile,
+  initialSuggestions,
 }: {
   profile: BrandProfile | null;
+  initialSuggestions?: Array<{ name: string; url: string }>;
 }) {
   const [mode, setMode] = useState<"url" | "description">(profile?.catalogue_source === "described" ? "description" : "url");
   const [url, setUrl] = useState(profile?.url ?? "");
