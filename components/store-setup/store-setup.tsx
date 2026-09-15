@@ -72,125 +72,179 @@ export function StoreSetup({
     });
 
   return (
-    <main className="pb-12">
-      <div className="flex flex-col gap-4 px-8">
-        <Panel className="p-5">
-          <PanelHeading
-            eyebrow="Your business"
-            title={verified || competitors.length > 0 ? "All set" : "Let's start"}
-            description={
-              verified
-                ? "Your store is verified. Everything the product recommends is written against this."
-                : competitors.length > 0
-                  ? "We found 2 competitors to monitor."
-                  : "Tell us about your business so we can find competitors to monitor."
-            }
-          />
+    <main className="min-h-screen bg-gradient-to-br from-surface to-surface-sunken pb-20">
+      <div className="mx-auto max-w-2xl px-6 pt-12">
+        {/* Header */}
+        <div className="mb-10">
+          <h1 className="text-4xl font-bold tracking-tight text-ink">Tell us about your business</h1>
+          <p className="mt-3 text-lg text-ink-muted">
+            We'll find competitors to monitor and help you stay ahead.
+          </p>
+        </div>
 
-          {mode === "url" ? (
-            <div className="mt-5 space-y-3">
-              <label className="block">
-                <span className="eyebrow">Your store URL</span>
-                <div className="mt-1.5 flex gap-2">
+        {/* Main card */}
+        <div className="rounded-2xl border border-border bg-surface p-8 shadow-sm">
+          {/* Mode toggle */}
+          <div className="mb-8 flex gap-3 rounded-xl bg-surface-sunken p-1">
+            <button
+              onClick={() => {
+                setMode("url");
+                setError(null);
+              }}
+              className={`flex-1 rounded-lg px-4 py-3 text-base font-semibold transition-all ${
+                mode === "url"
+                  ? "bg-accent text-accent-ink shadow-sm"
+                  : "text-ink-muted hover:text-ink"
+              }`}
+            >
+              I have a website
+            </button>
+            <button
+              onClick={() => {
+                setMode("description");
+                setError(null);
+              }}
+              className={`flex-1 rounded-lg px-4 py-3 text-base font-semibold transition-all ${
+                mode === "description"
+                  ? "bg-accent text-accent-ink shadow-sm"
+                  : "text-ink-muted hover:text-ink"
+              }`}
+            >
+              No website yet
+            </button>
+          </div>
+
+          {/* URL Mode */}
+          {mode === "url" && (
+            <div className="space-y-5">
+              <div>
+                <label htmlFor="url" className="block text-sm font-semibold text-ink">
+                  Your store URL
+                </label>
+                <p className="mt-1 text-sm text-ink-faint">
+                  Enter your Shopify store domain for verification
+                </p>
+                <div className="mt-3 flex gap-2">
                   <input
+                    id="url"
                     type="url"
                     value={url}
                     onChange={(e) => {
                       setUrl(e.target.value);
                       setVerified(false);
                     }}
-                    placeholder="yourstore.com"
+                    placeholder="yourstore.myshopify.com"
                     disabled={verified}
-                    className="flex-1 rounded-lg border border-border bg-surface px-3 py-2.5 text-base text-ink placeholder:text-ink-faint focus:border-accent focus:outline-none disabled:opacity-50"
+                    className="flex-1 rounded-lg border border-border bg-surface px-4 py-3 text-base text-ink placeholder:text-ink-faint focus:border-accent focus:outline-2 focus:outline-offset-0 focus:outline-accent disabled:bg-surface-sunken disabled:opacity-50"
                   />
-                  {verified && <span className="flex items-center text-2xl text-green-600">✓</span>}
+                  {verified && (
+                    <div className="flex items-center justify-center rounded-lg bg-green-100 px-4">
+                      <span className="text-2xl">✓</span>
+                    </div>
+                  )}
                 </div>
-              </label>
+              </div>
 
               {!verified && (
                 <button
                   onClick={verifyUrl}
                   disabled={reading || !url.trim()}
-                  className="rounded-lg bg-solid px-4 py-2.5 text-[15px] font-medium text-solid-ink transition-colors hover:bg-solid-hover disabled:opacity-50"
+                  className="w-full rounded-lg bg-accent px-4 py-3 text-base font-semibold text-accent-ink transition-all hover:bg-accent-hover disabled:opacity-60"
                 >
-                  {reading ? "Verifying…" : "Verify"}
+                  {reading ? "Verifying…" : "Verify store"}
                 </button>
               )}
 
-              <button
-                type="button"
-                onClick={() => {
-                  setMode("description");
-                  setError(null);
-                }}
-                className="text-[15px] text-ink-muted underline-offset-4 hover:text-ink hover:underline"
-              >
-                I don't have a website yet
-              </button>
+              {error && (
+                <div role="alert" className="rounded-lg border border-sev-critical bg-sev-critical-wash px-4 py-3">
+                  <p className="text-sm font-medium text-sev-critical">{error}</p>
+                </div>
+              )}
             </div>
-          ) : (
-            <div className="mt-5 space-y-3">
-              <label className="block">
-                <span className="eyebrow">Describe your business (max 4 lines)</span>
+          )}
+
+          {/* Description Mode */}
+          {mode === "description" && (
+            <div className="space-y-5">
+              <div>
+                <label htmlFor="description" className="block text-sm font-semibold text-ink">
+                  Describe your business
+                </label>
+                <p className="mt-1 text-sm text-ink-faint">
+                  What you sell, your target customers, and how you'd position yourself
+                </p>
                 <textarea
+                  id="description"
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
-                  rows={4}
+                  rows={5}
                   maxLength={400}
-                  placeholder="What you sell, who buys it, how you'd describe your positioning…"
-                  className="mt-1.5 w-full rounded-lg border border-border bg-surface px-3 py-2.5 text-base text-ink placeholder:text-ink-faint focus:border-accent focus:outline-none"
+                  placeholder="E.g., Premium outdoor gear for hikers and campers, 25-55 years old, eco-conscious buyers willing to pay for quality."
+                  className="mt-3 w-full rounded-lg border border-border bg-surface px-4 py-3 text-base text-ink placeholder:text-ink-faint focus:border-accent focus:outline-2 focus:outline-offset-0 focus:outline-accent"
                 />
-              </label>
+                <p className="mt-2 text-xs text-ink-faint">
+                  {description.length}/400 characters
+                </p>
+              </div>
 
               <button
                 onClick={discoverCompetitors}
                 disabled={reading || !description.trim()}
-                className="rounded-lg bg-solid px-4 py-2.5 text-[15px] font-medium text-solid-ink transition-colors hover:bg-solid-hover disabled:opacity-50"
+                className="w-full rounded-lg bg-accent px-4 py-3 text-base font-semibold text-accent-ink transition-all hover:bg-accent-hover disabled:opacity-60"
               >
                 {reading ? "Finding competitors…" : "Find competitors"}
               </button>
 
-              <button
-                type="button"
-                onClick={() => {
-                  setMode("url");
-                  setError(null);
-                }}
-                className="text-[15px] text-ink-muted underline-offset-4 hover:text-ink hover:underline"
-              >
-                I have a website
-              </button>
+              {error && (
+                <div role="alert" className="rounded-lg border border-sev-critical bg-sev-critical-wash px-4 py-3">
+                  <p className="text-sm font-medium text-sev-critical">{error}</p>
+                </div>
+              )}
             </div>
           )}
+        </div>
 
-          {error && (
-            <p role="alert" className="mt-4 rounded-lg bg-sev-critical-wash px-3 py-2 text-[15px] text-sev-critical">
-              {error}
-            </p>
-          )}
-        </Panel>
-
+        {/* Competitors section */}
         {competitors.length > 0 && (
-          <Panel className="p-5">
-            <PanelHeading eyebrow="Ready to monitor" title="Your competitors" />
-            <div className="mt-5 space-y-3">
+          <div className="mt-12">
+            <div className="mb-6">
+              <h2 className="text-2xl font-bold text-ink">
+                Ready to monitor
+              </h2>
+              <p className="mt-2 text-ink-muted">
+                {competitors.length} competitor{competitors.length !== 1 ? 's' : ''} found in your category
+              </p>
+            </div>
+
+            <div className="grid gap-4">
               {competitors.map((c) => (
                 <a
                   key={c.url}
                   href={c.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="block rounded-lg border border-border p-3 hover:bg-surface-sunken"
+                  className="group rounded-xl border border-border bg-surface p-5 transition-all hover:border-accent hover:bg-surface-sunken hover:shadow-md"
                 >
-                  <div className="font-medium text-ink">{c.name}</div>
-                  <div className="text-[13px] text-ink-muted">{c.url}</div>
-                  {c.rationale && (
-                    <div className="mt-2 text-[13px] text-ink-faint">{c.rationale}</div>
-                  )}
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <h3 className="text-lg font-semibold text-ink group-hover:text-accent">
+                        {c.name}
+                      </h3>
+                      <p className="mt-1 text-sm text-ink-muted">{c.url}</p>
+                      {c.rationale && (
+                        <p className="mt-3 text-sm text-ink-faint leading-relaxed">
+                          {c.rationale}
+                        </p>
+                      )}
+                    </div>
+                    <div className="shrink-0 text-2xl text-accent opacity-0 transition-opacity group-hover:opacity-100">
+                      →
+                    </div>
+                  </div>
                 </a>
               ))}
             </div>
-          </Panel>
+          </div>
         )}
       </div>
     </main>
