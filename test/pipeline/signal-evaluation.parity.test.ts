@@ -207,7 +207,40 @@ describe("Signal Evaluation matches WF-02", () => {
         return alertRow(change, reply === null ? null : parseInterpretation(reply), RUN_ID);
       }),
     ).toEqual(reference.alerts);
-    expect(baselineRows(scenario.products, COMPETITOR.id, NOW)).toEqual(reference.baselineRows);
+
+    // last_in_stock has no WF-02 equivalent — added after the port, and not
+    // part of the parity surface (see evaluateSignals's doc comment). Stripped
+    // before the parity comparison, then checked directly against the
+    // fixture's own available/fullyOutOfStock fields.
+    const baseline = baselineRows(scenario.products, COMPETITOR.id, NOW);
+    expect(
+      baseline.map((row) => ({
+        competitor_id: row.competitor_id,
+        product_handle: row.product_handle,
+        product_title: row.product_title,
+        product_url: row.product_url,
+        currency: row.currency,
+        last_price: row.last_price,
+        last_seen_at: row.last_seen_at,
+      })),
+    ).toEqual(reference.baselineRows);
+
+    const expectedStock = new Map<string, boolean | null>();
+    for (const product of scenario.products) {
+      const handle = productHandle(product);
+      if (!handle || expectedStock.has(handle)) continue;
+      expectedStock.set(
+        handle,
+        typeof product.fullyOutOfStock === "boolean"
+          ? !product.fullyOutOfStock
+          : typeof product.available === "boolean"
+            ? product.available
+            : null,
+      );
+    }
+    expect(baseline.map((row) => [row.product_handle, row.last_in_stock])).toEqual([
+      ...expectedStock.entries(),
+    ]);
   });
 });
 

@@ -27,21 +27,31 @@ export interface BrandProfileInput {
   catalogue_source?: string | null;
 }
 
-/** Same block WF-02 and WF-03 both built — kept in the user message, never the
+/**
+ * Same block WF-02 and WF-03 both built — kept in the user message, never the
  * cached system prompt, because it changes whenever the operator edits their
- * profile. */
+ * profile.
+ *
+ * Gated on `brand` existing at all, not on `brand.url` specifically — in
+ * WF-03's era those were equivalent (a profile always had a url), but a
+ * business with no website (catalogue_source 'described') has a real profile
+ * worth including with `url` null.
+ */
 function brandBlock(brand: BrandProfileInput | null): string {
-  if (!brand || !brand.url) return "";
+  if (!brand) return "";
+  const identity = brand.name ?? brand.url;
   return [
     "<brand_profile>",
-    `Brand: ${brand.name ?? brand.url}`,
+    identity ? `Brand: ${identity}` : null,
     brand.categories?.length ? `Sells: ${brand.categories.join(", ")}` : null,
     brand.price_min != null ? `Price range: ${brand.currency ?? ""} ${brand.price_min}–${brand.price_max}` : null,
     brand.positioning ? `Positioning (inferred): ${brand.positioning}` : null,
     brand.priorities ? `Their stated priorities: ${brand.priorities}` : null,
     brand.catalogue_source === "inferred"
       ? "NOTE: catalogue figures were INFERRED from their website, not read from a feed."
-      : null,
+      : brand.catalogue_source === "described"
+        ? "NOTE: this business has no website — the profile is based entirely on the operator's own description, not read from anything."
+        : null,
     "</brand_profile>",
     "",
   ]

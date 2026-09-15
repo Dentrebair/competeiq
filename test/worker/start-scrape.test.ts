@@ -2,6 +2,7 @@ import type { Job } from "pg-boss";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { JobData } from "@/lib/queue/jobs";
+import { FREE_TIER_MAX_PRODUCTS_PER_COMPETITOR } from "@/lib/tier";
 
 /**
  * start_scrape against a mocked Apify API, the database and the worker's
@@ -59,7 +60,7 @@ describe("startScrape", () => {
     const body = JSON.parse(init!.body as string);
     expect(body).toEqual({
       domains: ["https://acme.example"],
-      maxProducts: 100,
+      maxProducts: FREE_TIER_MAX_PRODUCTS_PER_COMPETITOR,
       proxyConfiguration: { useApifyProxy: true, apifyProxyGroups: ["RESIDENTIAL"] },
     });
 

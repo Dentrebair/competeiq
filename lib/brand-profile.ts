@@ -59,6 +59,8 @@ const CATALOGUE_CAVEAT: Record<string, string> = {
     "The catalogue figures below were read from a sample of the brand's product pages. They are close but may be incomplete — do not treat a price band as exhaustive.",
   inferred:
     "The catalogue figures below were INFERRED from reading the brand's website, not from a product feed. They may be wrong. Do not build a recommendation on a specific price or product count without saying that you are assuming it.",
+  described:
+    "This business has no website yet. There is no catalogue at all — categories, audience and positioning below come from the operator's own description, not from anything read or verified.",
 };
 
 /**
@@ -85,8 +87,8 @@ export function brandProfileContext(profile: BrandProfile | null): string | null
   lines.push("");
 
   if (profile.name) lines.push(`Brand: ${profile.name}`);
-  lines.push(`Store: ${profile.url}`);
-  if (profile.platform) lines.push(`Platform: ${profile.platform}`);
+  lines.push(profile.url ? `Store: ${profile.url}` : "Store: none — this business has no website yet.");
+  if (profile.platform && profile.platform !== "none") lines.push(`Platform: ${profile.platform}`);
 
   const caveat = profile.catalogue_source
     ? CATALOGUE_CAVEAT[profile.catalogue_source]

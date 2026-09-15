@@ -3,13 +3,13 @@
 import { useState, useTransition } from "react";
 
 import {
-  acceptSuggestion,
-  dismissSuggestion,
   readStoreDraft,
+  readStoreDraftFromDescription,
   saveBrandProfile,
   suggestCompetitors,
   type BrandProfileDraft,
 } from "@/app/actions/onboarding";
+import { SuggestionList } from "@/components/competitors/suggestion-card";
 import { Panel, PanelHeading } from "@/components/page-header";
 import { formatPrice } from "@/lib/format";
 import type { BrandProfile, CompetitorSuggestion } from "@/lib/types/database";
@@ -49,6 +49,12 @@ const TIER: Record<
     blurb:
       "Your catalogue could not be read directly, so this was interpreted from your site. Please correct anything wrong, because everything downstream reasons from it.",
   },
+  described: {
+    label: "No website yet",
+    tone: "bg-sev-high-wash text-sev-high",
+    blurb:
+      "There is no catalogue to read — this is based entirely on what you described. Please correct anything wrong, because everything downstream reasons from it.",
+  },
 };
 
 function Field({
@@ -79,89 +85,6 @@ function Field({
   );
 }
 
-function SuggestionCard({
-  suggestion,
-  onResolved,
-}: {
-  suggestion: CompetitorSuggestion;
-  onResolved: (id: string) => void;
-}) {
-  const [pending, startTransition] = useTransition();
-  const [error, setError] = useState<string | null>(null);
-  const evidence = suggestion.evidence ?? {};
-
-  const bits = [
-    evidence.platform,
-    typeof evidence.product_count === "number" ? `${evidence.product_count} products` : null,
-    typeof evidence.price_min === "number" && typeof evidence.price_max === "number"
-      ? `${formatPrice(evidence.price_min, evidence.currency ?? null)}–${formatPrice(
-          evidence.price_max,
-          evidence.currency ?? null,
-        )}`
-      : null,
-    evidence.overlapping_categories?.length
-      ? `overlaps ${evidence.overlapping_categories.slice(0, 3).join(", ")}`
-      : null,
-  ].filter(Boolean);
-
-  return (
-    <article className="rounded-xl border border-border bg-surface p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-base font-semibold text-ink">{suggestion.name}</p>
-          <p className="truncate text-[13px] text-ink-faint">{suggestion.domain}</p>
-        </div>
-        <span className="shrink-0 rounded-full bg-sev-low-wash px-2 py-0.5 text-xs font-medium text-sev-low">
-          Verified
-        </span>
-      </div>
-
-      {/* The evidence line is what makes a wrong suggestion cheap to reject. */}
-      {bits.length ? <p className="mt-2 text-[13px] text-ink-muted">{bits.join(" · ")}</p> : null}
-
-      {suggestion.rationale ? (
-        <p className="mt-2 text-[15px] leading-relaxed text-ink-muted">{suggestion.rationale}</p>
-      ) : null}
-
-      <div className="mt-3 flex items-center gap-3">
-        <button
-          type="button"
-          disabled={pending}
-          onClick={() =>
-            startTransition(async () => {
-              const result = await acceptSuggestion(suggestion.id);
-              if (result.ok) onResolved(suggestion.id);
-              else setError(result.error ?? "Could not add that competitor.");
-            })
-          }
-          className="rounded-lg bg-solid px-3 py-1.5 text-[15px] font-medium text-solid-ink transition-colors hover:bg-solid-hover disabled:opacity-50"
-        >
-          {pending ? "Adding…" : "Monitor this"}
-        </button>
-        <button
-          type="button"
-          disabled={pending}
-          onClick={() =>
-            startTransition(async () => {
-              await dismissSuggestion(suggestion.id);
-              onResolved(suggestion.id);
-            })
-          }
-          className="text-[15px] text-ink-muted underline-offset-4 hover:text-ink hover:underline disabled:opacity-50"
-        >
-          Not a competitor
-        </button>
-      </div>
-
-      {error ? (
-        <p role="alert" className="mt-2 text-[15px] text-sev-critical">
-          {error}
-        </p>
-      ) : null}
-    </article>
-  );
-}
-
 export function StoreSetup({
   profile,
   initialSuggestions,
@@ -169,7 +92,9 @@ export function StoreSetup({
   profile: BrandProfile | null;
   initialSuggestions: CompetitorSuggestion[];
 }) {
+  const [mode, setMode] = useState<"url" | "description">(profile?.catalogue_source === "described" ? "description" : "url");
   const [url, setUrl] = useState(profile?.url ?? "");
+  const [description, setDescription] = useState("");
   const [draft, setDraft] = useState<BrandProfileDraft | null>(null);
   const [saved, setSaved] = useState(Boolean(profile));
   const [error, setError] = useState<string | null>(null);
@@ -185,6 +110,19 @@ export function StoreSetup({
       setError(null);
       setNotice(null);
       const result = await readStoreDraft(url);
+      if (result.ok) {
+        setDraft(result.draft);
+        setSaved(false);
+      } else {
+        setError(result.error);
+      }
+    });
+
+  const readFromDescription = () =>
+    startReading(async () => {
+      setError(null);
+      setNotice(null);
+      const result = await readStoreDraftFromDescription(description);
       if (result.ok) {
         setDraft(result.draft);
         setSaved(false);
@@ -232,33 +170,73 @@ export function StoreSetup({
               ? "Everything the product recommends is written against this. Correct anything wrong."
               : "One address. We read your catalogue and work out the rest, with no form to fill in."
           }
+          aside={
+            <button
+              type="button"
+              onClick={() => {
+                setError(null);
+                setMode((current) => (current === "url" ? "description" : "url"));
+              }}
+              className="text-[15px] text-ink-muted underline-offset-4 hover:text-ink hover:underline"
+            >
+              {mode === "url" ? "I don't have a website yet" : "I have a website"}
+            </button>
+          }
         />
 
-        <div className="mt-5 flex flex-wrap items-end gap-3">
-          <label className="min-w-[280px] flex-1">
-            <span className="eyebrow">Store address</span>
-            <input
-              value={url}
-              onChange={(event) => setUrl(event.target.value)}
-              placeholder="yourstore.com"
-              className="mt-1.5 w-full rounded-lg border border-border bg-surface px-3 py-2.5 text-base
-                         text-ink placeholder:text-ink-faint focus:border-accent focus:outline-none"
-            />
-          </label>
-          <button
-            type="button"
-            onClick={read}
-            disabled={reading || !url.trim()}
-            className="rounded-lg bg-solid px-4 py-2.5 text-[15px] font-medium text-solid-ink
-                       transition-colors hover:bg-solid-hover disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {reading ? "Reading your store…" : profile ? "Re-read my store" : "Read my store"}
-          </button>
-        </div>
+        {mode === "url" ? (
+          <div className="mt-5 flex flex-wrap items-end gap-3">
+            <label className="min-w-[280px] flex-1">
+              <span className="eyebrow">Store address</span>
+              <input
+                value={url}
+                onChange={(event) => setUrl(event.target.value)}
+                placeholder="yourstore.com"
+                className="mt-1.5 w-full rounded-lg border border-border bg-surface px-3 py-2.5 text-base
+                           text-ink placeholder:text-ink-faint focus:border-accent focus:outline-none"
+              />
+            </label>
+            <button
+              type="button"
+              onClick={read}
+              disabled={reading || !url.trim()}
+              className="rounded-lg bg-solid px-4 py-2.5 text-[15px] font-medium text-solid-ink
+                         transition-colors hover:bg-solid-hover disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {reading ? "Reading your store…" : profile ? "Re-read my store" : "Read my store"}
+            </button>
+          </div>
+        ) : (
+          <div className="mt-5 flex flex-col gap-3">
+            <label className="block">
+              <span className="eyebrow">Describe your business, briefly</span>
+              <textarea
+                value={description}
+                onChange={(event) => setDescription(event.target.value)}
+                rows={5}
+                maxLength={600}
+                placeholder="What you sell, who buys it, and how you'd describe your positioning — a few sentences is enough."
+                className="mt-1.5 w-full rounded-lg border border-border bg-surface px-3 py-2.5 text-base
+                           text-ink placeholder:text-ink-faint focus:border-accent focus:outline-none"
+              />
+            </label>
+            <button
+              type="button"
+              onClick={readFromDescription}
+              disabled={reading || !description.trim()}
+              className="self-start rounded-lg bg-solid px-4 py-2.5 text-[15px] font-medium text-solid-ink
+                         transition-colors hover:bg-solid-hover disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {reading ? "Reading your description…" : "Continue"}
+            </button>
+          </div>
+        )}
 
         {reading ? (
           <p className="mt-3 text-[15px] text-ink-muted">
-            Looking for a product feed, then falling back to your product pages. A few seconds.
+            {mode === "url"
+              ? "Looking for a product feed, then falling back to your product pages. A few seconds."
+              : "Working out categories, audience and positioning from what you wrote."}
           </p>
         ) : null}
 
@@ -373,7 +351,7 @@ export function StoreSetup({
         <Panel className="p-5">
           <PanelHeading
             eyebrow="Saved profile"
-            title={profile.name ?? profile.url}
+            title={profile.name ?? profile.url ?? "Your business"}
             aside={
               tierInfo ? (
                 <span className={`rounded-full px-2.5 py-1 text-xs font-semibold uppercase tracking-wider ${tierInfo.tone}`}>
@@ -439,14 +417,11 @@ export function StoreSetup({
           />
 
           {suggestions.length ? (
-            <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {suggestions.map((suggestion) => (
-                <SuggestionCard
-                  key={suggestion.id}
-                  suggestion={suggestion}
-                  onResolved={(id) => setSuggestions((prev) => prev.filter((s) => s.id !== id))}
-                />
-              ))}
+            <div className="mt-5">
+              <SuggestionList
+                suggestions={suggestions}
+                onResolved={(id) => setSuggestions((prev) => prev.filter((s) => s.id !== id))}
+              />
             </div>
           ) : (
             <p className="mt-5 rounded-xl border border-dashed border-border-strong p-6 text-[15px] text-ink-muted">

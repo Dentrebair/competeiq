@@ -37,7 +37,7 @@
  * ---------------------------------------------------------------------------
  */
 
-export type CatalogueSource = "confirmed" | "page_data" | "inferred";
+export type CatalogueSource = "confirmed" | "page_data" | "inferred" | "described";
 
 export interface StoreRead {
   /** The origin actually read, after normalising and following redirects. */
@@ -631,4 +631,18 @@ export async function fetchPageText(url: string, maxChars = 12_000): Promise<str
  */
 export function isMonitorable(read: StoreRead | null): boolean {
   return Boolean(read && read.source !== null);
+}
+
+/**
+ * Whether a read is solid enough that our *own scraping pipeline* can actually
+ * monitor the site going forward — a stricter bar than {@link isMonitorable}.
+ *
+ * The Apify actor wired into the worker (`trovevault/shopify-products-scraper`)
+ * only reads Shopify stores. A WooCommerce or sitemap-only read is real enough
+ * evidence to describe a business (see `isMonitorable`), but adding it as a
+ * competitor here would create the exact failure this function exists to
+ * prevent: a competitor that looks added, and never produces a signal.
+ */
+export function isPipelineMonitorable(read: StoreRead | null): boolean {
+  return Boolean(read && read.platform === "shopify" && read.source === "confirmed");
 }

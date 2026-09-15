@@ -32,7 +32,7 @@ What replaced what:
 |---|---|
 | WF-02 (signal processor) | `worker/handlers/process-apify-run.ts` |
 | Config Loader | `syncCompetitorSchedule()` in `app/actions/competitors.ts` |
-| Manual Trigger (Run Now) | `runCompetitorNow()` in `app/actions/competitors.ts` — not wired to a UI button yet |
+| Manual Trigger (Run Now) | `runCompetitorNow()` in `app/actions/competitors.ts`, wired to the "Run now" button in `components/competitors/monitoring.tsx` |
 | WF-03 (digest) | `worker/handlers/generate-digest.ts` |
 | Apify Tasks/Schedules | pg-boss schedules, one per active competitor, in `pgboss.schedule` |
 
@@ -68,10 +68,10 @@ the webhook body.
 - `check_apify_run` — the delayed backstop (~30 min after start) for a lost
   completion webhook. Polls Apify; on SUCCEEDED enqueues processor, on RUNNING
   reschedules itself for ~5 min, on FAILED/ABORTED logs and skips.
-- `process_apify_run` — replaces WF-02. Diffs the run against the Baseline,
-  calls Claude Haiku, writes alerts + Baseline in one transaction.
-- `generate_digest` — replaces WF-03. Claude Opus with thinking on, `effort:
-  high`, structured output via `jsonSchemaOutputFormat()`. Can run for minutes.
+- `process_apify_run` — diffs the run against the Baseline, calls Claude Haiku,
+  writes alerts + Baseline in one transaction.
+- `generate_digest` — Claude Opus with thinking on, `effort: high`, structured
+  output via `jsonSchemaOutputFormat()`. Can run for minutes.
 
 Consequence for the UI, and it is not optional: **login must never block on the
 digest.** The page loads the alert feed from Supabase immediately and renders the
@@ -268,13 +268,20 @@ Not here on purpose: `SUPABASE_SERVICE_ROLE_KEY` (neither service needs it —
 see "Key rules"), `RESEND_API_KEY` (email delivery is out of scope for this
 migration).
 
-**Working, verified against a real Apify run (see "Confirmed working
-end-to-end" under Open):** login, `proxy.ts` auth gate, alert feed over
-Realtime, competitor management (add/pause/resume/sync/**delete** all
-reconcile a real pg-boss schedule, not a dead webhook call), all four worker
-jobs (`start_scrape`, `check_apify_run`, `process_apify_run`,
+**Working, verified against a real Apify run:** login, `proxy.ts` auth gate,
+alert feed over Realtime, competitor management (add/pause/resume/sync/**delete**
+all reconcile a real pg-boss schedule, not a dead webhook call), all four
+worker jobs (`start_scrape`, `check_apify_run`, `process_apify_run`,
 `generate_digest`), the webhook route (`/api/webhooks/apify`), the
 run→competitor lookup (`scrape_runs`), migrations 00→11.
+
+**Confirmed working end-to-end (2026-09-15):** a real competitor
+(deathwishcoffee.com) went through the full chain — Run Now → `start_scrape` →
+Apify → webhook → `process_apify_run` → alerts written → visible in the
+browser over Realtime. A second competitor (zillow.myshopify.com) correctly
+produced no alerts because Apify itself rejected it as not a compatible
+Shopify store — proof the pipeline distinguishes a real scrape failure from
+"nothing changed" rather than silently swallowing it.
 
 **UI, added after the first live test surfaced gaps in visibility:**
 - Per-competitor "Run now" button shows live progress (`RunProgress` in
@@ -323,14 +330,6 @@ mechanics are unchanged).
   (`update public.pipeline_state set mode = 'live';` — no `id` column, it's a
   singleton row) so competitors' own schedules start firing without a manual
   Run Now each time.
-
-**Confirmed working end-to-end (2026-09-15):** a real competitor
-(deathwishcoffee.com) went through the full chain — Run Now → `start_scrape` →
-Apify → webhook → `process_apify_run` → alerts written → visible in the
-browser over Realtime. A second competitor (zillow.myshopify.com) correctly
-produced no alerts because Apify itself rejected it as not a compatible
-Shopify store — proof the pipeline distinguishes a real scrape failure from
-"nothing changed" rather than silently swallowing it.
 
 ### Handoff docs
 - `docs/n8n-claude-calls.md` — the Claude prompts and schemas, ported verbatim

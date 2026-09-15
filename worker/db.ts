@@ -105,7 +105,7 @@ export async function updateScrapeRunStatus(
 export async function getBaseline(competitorId: string): Promise<BaselineEntry[]> {
   const db = getPipelineDb();
   const { rows } = await db.query<BaselineEntry>(
-    `select product_handle, last_price
+    `select product_handle, last_price, last_in_stock
        from public.competitor_products
       where competitor_id = $1`,
     [competitorId],
@@ -183,14 +183,15 @@ export async function persistProcessedRun({
       await client.query(
         `insert into public.competitor_products (
            competitor_id, product_handle, product_title, product_url, currency,
-           last_price, last_seen_at
-         ) values ($1, $2, $3, $4, $5, $6, $7)
+           last_price, last_in_stock, last_seen_at
+         ) values ($1, $2, $3, $4, $5, $6, $7, $8)
          on conflict (competitor_id, product_handle) do update set
-           product_title = excluded.product_title,
-           product_url   = excluded.product_url,
-           currency      = excluded.currency,
-           last_price    = excluded.last_price,
-           last_seen_at  = excluded.last_seen_at`,
+           product_title  = excluded.product_title,
+           product_url    = excluded.product_url,
+           currency       = excluded.currency,
+           last_price     = excluded.last_price,
+           last_in_stock  = excluded.last_in_stock,
+           last_seen_at   = excluded.last_seen_at`,
         [
           row.competitor_id,
           row.product_handle,
@@ -198,6 +199,7 @@ export async function persistProcessedRun({
           row.product_url,
           row.currency,
           row.last_price,
+          row.last_in_stock,
           row.last_seen_at,
         ],
       );

@@ -133,6 +133,12 @@ const SIGNAL_ICON: Record<SignalType, ReactNode> = {
       <path d="m2.6 5.2 5.4 4 5.4-4" />
     </>
   ),
+  inventory_status: (
+    <>
+      <path d="M8 2 13.5 5v6L8 14 2.5 11V5L8 2Z" />
+      <path d="M2.5 5 8 8l5.5-3M8 8v6" />
+    </>
+  ),
 };
 
 /** `signal_type` is free text in the database, so an unknown value must render. */
@@ -155,6 +161,10 @@ const SIGNAL_TONE: Record<SignalType, { text: string; wash: string }> = {
   ad_creative: { text: "text-sig-newsletter", wash: "bg-sig-newsletter-wash" },
   review_sentiment: { text: "text-sig-reviews", wash: "bg-sig-reviews-wash" },
   newsletter: { text: "text-sig-newsletter", wash: "bg-sig-newsletter-wash" },
+  // Shares catalog's tone rather than a new token — same precedent as
+  // ad_creative sharing newsletter's: both are about a product's own state,
+  // distinguished by icon and label rather than a dedicated color.
+  inventory_status: { text: "text-sig-catalog", wash: "bg-sig-catalog-wash" },
 };
 
 const UNKNOWN_TONE = { text: "text-sig-unknown", wash: "bg-sig-unknown-wash" };

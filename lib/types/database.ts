@@ -156,6 +156,20 @@ export type ScrapeRun = {
   updated_at: string;
 }
 
+/**
+ * The live/paused switch (supabase/07-pipeline-worker.sql). A singleton row —
+ * `mode` is flipped by hand in the SQL editor, never by app or worker code.
+ * The app reads it read-only, to decide whether free-tier guardrails
+ * (competitor cap, forced cadence, Run Now cooldown) are active yet: they stay
+ * off during `paused` so testing is never throttled, and switch on the same
+ * moment the operator flips this to `live` for the unrelated reason of
+ * letting competitors' own schedules start firing unattended.
+ */
+export type PipelineState = {
+  mode: "live" | "paused";
+  heartbeat_at: string | null;
+}
+
 export type Alert = {
   /** bigint sequence, not uuid. Arrives as a JS number. */
   id: number;
@@ -280,7 +294,7 @@ export type SignalConfig = {
  * The UI must surface this. At `confirmed` the review step is a formality; at
  * `inferred` it is the entire point of the screen.
  */
-export type CatalogueSource = "confirmed" | "page_data" | "inferred";
+export type CatalogueSource = "confirmed" | "page_data" | "inferred" | "described";
 
 /**
  * The operator's own business. Exactly one row, enforced by a unique constraint
@@ -298,7 +312,8 @@ export type CatalogueSource = "confirmed" | "page_data" | "inferred";
 export type BrandProfile = {
   id: string;
   singleton: boolean;
-  url: string;
+  /** Null when the operator described their business instead of reading a site — see catalogue_source 'described'. */
+  url: string | null;
   name: string | null;
   platform: string | null;
   catalogue_source: CatalogueSource | null;
@@ -487,6 +502,14 @@ export interface Database {
       /** Read-only for the app (supabase/11) — the worker owns every write. */
       scrape_runs: {
         Row: ScrapeRun;
+        Insert: Record<string, never>;
+        Update: Record<string, never>;
+        Relationships: [];
+      };
+
+      /** Read-only for the app (supabase/07) — flipped by hand in the SQL editor. */
+      pipeline_state: {
+        Row: PipelineState;
         Insert: Record<string, never>;
         Update: Record<string, never>;
         Relationships: [];

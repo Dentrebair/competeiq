@@ -26,6 +26,7 @@ export const SIGNAL_TYPES = [
   "review_sentiment",
   "website_change",
   "newsletter",
+  "inventory_status",
 ] as const;
 
 export type SignalType = (typeof SIGNAL_TYPES)[number];
@@ -53,6 +54,7 @@ export const SIGNAL_TYPE_LABELS: Record<SignalType, string> = {
   review_sentiment: "Review sentiment",
   website_change: "Website change",
   newsletter: "Newsletter",
+  inventory_status: "Inventory status",
 };
 
 /** Label for display, falling back to the raw string rather than blank. */
@@ -85,6 +87,10 @@ export const SIGNAL_AVAILABILITY: Record<SignalType, "live" | "coming_soon"> = {
   ad_creative: "coming_soon",
   review_sentiment: "coming_soon",
   newsletter: "coming_soon",
+  // The actor already returns stock data — verified against a real dataset
+  // item (test/fixtures/apify/deathwish-2026-08-23.json) — and evaluateSignals'
+  // diffInventory branch reads it.
+  inventory_status: "live",
 };
 
 export function isSignalLive(signal: SignalType): boolean {
@@ -103,6 +109,7 @@ export const DEFAULT_FREQUENCY_HOURS: Record<SignalType, number> = {
   review_sentiment: 24,
   website_change: 8,
   newsletter: 24,
+  inventory_status: 24,
 };
 
 /** Bounds enforced by the signal_configs CHECK constraint. */

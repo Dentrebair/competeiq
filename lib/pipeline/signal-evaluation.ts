@@ -26,7 +26,14 @@ const MIN_DISCOUNT_PCT = 25;
 /** Per signal, biggest first, so a whole-catalogue repricing cannot flood the feed. */
 const MAX_ALERTS_PER_SIGNAL = 10;
 
-/** The fields of a trovevault/shopify-products-scraper dataset item read here. */
+/**
+ * The fields of a trovevault/shopify-products-scraper dataset item read here.
+ *
+ * `available` and `fullyOutOfStock` verified against the same real dataset
+ * item every other field here was — test/fixtures/apify/deathwish-2026-08-23.json,
+ * where both appear at the top level of every product (e.g. `"available":
+ * true, "fullyOutOfStock": false`).
+ */
 export interface ApifyProduct {
   url?: string | null;
   title?: string | null;
@@ -34,12 +41,17 @@ export interface ApifyProduct {
   priceMin?: unknown;
   compareAtPrice?: unknown;
   currency?: string | null;
+  /** Product-level catalogue availability. */
+  available?: boolean;
+  /** Present when the actor already computed "every variant is out of stock". */
+  fullyOutOfStock?: boolean;
 }
 
 /** A `competitor_products` row as read back. PostgREST can return numerics as strings. */
 export interface BaselineEntry {
   product_handle: string | null;
   last_price: number | string | null;
+  last_in_stock?: boolean | null;
 }
 
 export interface CompetitorRef {
@@ -47,7 +59,11 @@ export interface CompetitorRef {
   name: string;
 }
 
-export type EvaluatedSignal = "sku_price_change" | "catalog_change" | "promo_discount";
+export type EvaluatedSignal =
+  | "sku_price_change"
+  | "catalog_change"
+  | "promo_discount"
+  | "inventory_status";
 export type Severity = "high" | "medium" | "low";
 
 export interface DetectedChange {
@@ -65,6 +81,8 @@ export interface DetectedChange {
   added_count?: number;
   removed_count?: number;
   added_titles?: string;
+  /** Inventory status only — the new state, after the flip. */
+  in_stock?: boolean;
 }
 
 /** The words Claude writes. Signal type and severity are never taken from it (ADR-0006). */
@@ -102,6 +120,7 @@ export interface BaselineRow {
   product_url: string | null;
   currency: string | null;
   last_price: number | null;
+  last_in_stock: boolean | null;
   last_seen_at: string;
 }
 
@@ -115,11 +134,14 @@ export function productHandle(product: ApifyProduct): string | null {
 }
 
 /**
- * Every change in one Collection Run, in WF-02's order: price, catalog, promo.
+ * Every change in one Collection Run, in WF-02's order: price, catalog, promo
+ * — plus inventory, added after the original WF-02 port (ADR-0004's parity
+ * test covers only the three original branches; this one has no n8n
+ * equivalent to stay faithful to).
  *
- * An empty Baseline means this is the competitor's first run. Price and catalog
- * then report nothing, because every product would look new. Promo needs no
- * history and fires anyway.
+ * An empty Baseline means this is the competitor's first run. Price, catalog
+ * and inventory then report nothing, because every product would look new.
+ * Promo needs no history and fires anyway.
  */
 export function evaluateSignals(
   products: ApifyProduct[],
@@ -135,6 +157,7 @@ export function evaluateSignals(
     ...diffPrice(products, known, competitor, firstRun),
     ...diffCatalog(products, known, competitor, firstRun),
     ...diffPromo(products, competitor),
+    ...diffInventory(products, known, competitor, firstRun),
   ];
 }
 
@@ -255,12 +278,72 @@ function diffPromo(products: ApifyProduct[], competitor: CompetitorRef): Detecte
   }));
 }
 
+/**
+ * Whether a product is in stock, or null when the dataset item carries neither
+ * field this reads — see the caveat on ApifyProduct. `fullyOutOfStock` is
+ * preferred when present since it is unambiguous about the whole product,
+ * whereas a missing `available` could mean "false" or "field not returned".
+ */
+function inStockStatus(product: ApifyProduct): boolean | null {
+  if (typeof product.fullyOutOfStock === "boolean") return !product.fullyOutOfStock;
+  if (typeof product.available === "boolean") return product.available;
+  return null;
+}
+
+/** A product flipping in or out of stock since the last run. */
+function diffInventory(
+  products: ApifyProduct[],
+  known: Array<BaselineEntry & { product_handle: string }>,
+  competitor: CompetitorRef,
+  firstRun: boolean,
+): DetectedChange[] {
+  if (firstRun) return [];
+
+  const previous = new Map<string, boolean | null>();
+  for (const row of known) {
+    previous.set(row.product_handle, row.last_in_stock ?? null);
+  }
+
+  const changes: DetectedChange[] = [];
+  for (const product of products) {
+    const handle = productHandle(product);
+    if (!handle) continue;
+
+    const currentStatus = inStockStatus(product);
+    if (currentStatus === null) continue;
+
+    const previousStatus = previous.get(handle);
+    if (previousStatus === null || previousStatus === undefined) continue;
+    if (previousStatus === currentStatus) continue;
+
+    changes.push({
+      signal_type: "inventory_status",
+      product_title: product.title || handle,
+      product_handle: handle,
+      product_url: product.url || null,
+      currency: null,
+      previous_price: null,
+      current_price: null,
+      delta_pct: null,
+      in_stock: currentStatus,
+      competitor_name: competitor.name,
+      competitor_id: competitor.id,
+    });
+  }
+
+  // Going out of stock first — the more commercially actionable direction —
+  // then the cap, same reasoning as the other signals' sort-then-slice.
+  changes.sort((a, b) => Number(a.in_stock) - Number(b.in_stock));
+  return changes.slice(0, MAX_ALERTS_PER_SIGNAL);
+}
+
 /** The Messages API request body for one change. */
 export function interpretationRequest(change: DetectedChange) {
   const detail = {
     sku_price_change: `Product "${change.product_title}" price changed ${change.delta_pct}% from ${change.previous_price} to ${change.current_price}`,
     catalog_change: `${change.added_count} products added and ${change.removed_count} products removed. New items include: ${change.added_titles || "unknown"}`,
     promo_discount: `"${change.product_title}" is now ${Math.abs(change.delta_pct ?? 0)}% off. Was ${change.previous_price}, now ${change.current_price}`,
+    inventory_status: `Product "${change.product_title}" is now ${change.in_stock ? "back in stock" : "out of stock"}`,
   }[change.signal_type];
 
   return {
@@ -320,7 +403,7 @@ const text = (value: unknown): string =>
  * the floor of interest, whereas a 25% price move is extreme.
  */
 export function severityFor(
-  change: Pick<DetectedChange, "signal_type" | "delta_pct" | "removed_count">,
+  change: Pick<DetectedChange, "signal_type" | "delta_pct" | "removed_count" | "in_stock">,
 ): Severity {
   const size = Math.abs(Number(change.delta_pct));
   switch (change.signal_type) {
@@ -332,6 +415,9 @@ export function severityFor(
       return size >= 50 ? "high" : size >= 35 ? "medium" : "low";
     case "catalog_change":
       return Number(change.removed_count) > 0 ? "medium" : "low";
+    // Going out of stock is worth a look; coming back is good to know, not urgent.
+    case "inventory_status":
+      return change.in_stock ? "low" : "medium";
     default:
       return "low";
   }
@@ -412,6 +498,7 @@ export function baselineRows(products: ApifyProduct[], competitorId: string, now
       product_url: product.url || null,
       currency: product.currency || null,
       last_price: isNumber(product.priceMin) ? product.priceMin : null,
+      last_in_stock: inStockStatus(product),
       last_seen_at: now.toISOString(),
     });
   }

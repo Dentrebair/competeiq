@@ -52,6 +52,12 @@ const ICON = {
       <path d="M9 1.8v1.8M9 14.4v1.8M16.2 9h-1.8M3.6 9H1.8M14.1 3.9l-1.3 1.3M5.2 12.8l-1.3 1.3M14.1 14.1l-1.3-1.3M5.2 5.2 3.9 3.9" />
     </>
   ),
+  pricing: (
+    <>
+      <path d="M9.5 2.5h5a1 1 0 0 1 1 1v5a1 1 0 0 1-.3.7l-6.5 6.5a1 1 0 0 1-1.4 0l-5-5a1 1 0 0 1 0-1.4l6.5-6.5a1 1 0 0 1 .7-.3Z" />
+      <circle cx="12.2" cy="5.8" r="0.9" />
+    </>
+  ),
   moon: <path d="M14.5 10.4A6 6 0 0 1 7.6 3.5a6 6 0 1 0 6.9 6.9Z" />,
   sun: (
     <>
@@ -225,6 +231,18 @@ export function AppSidebar({
         >
           <Icon shape={ICON.settings} />
           Store setup
+        </Link>
+
+        <Link
+          href="/pricing"
+          className={`flex items-center gap-3 rounded-lg px-3 py-2 text-[15px] transition-colors ${
+            isActive(pathname, "/pricing")
+              ? "bg-rail-raised text-rail-ink"
+              : "text-rail-ink-muted hover:bg-rail-raised hover:text-rail-ink"
+          }`}
+        >
+          <Icon shape={ICON.pricing} />
+          Pricing
         </Link>
 
         <ThemeToggle />

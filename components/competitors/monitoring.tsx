@@ -12,12 +12,15 @@ import {
   runCompetitorNow,
   type CompetitorActionState,
 } from "@/app/actions/competitors";
+import { suggestAlternativesFor } from "@/app/actions/onboarding";
 import { Panel, PanelHeading } from "@/components/page-header";
+import { SuggestionList } from "@/components/competitors/suggestion-card";
 import { TimeAgo } from "@/components/time-ago";
 import { SignalIcon, SignalTag } from "@/components/ui/chips";
 import { createClient } from "@/lib/supabase/client";
 import { SIGNAL_TYPES, SIGNAL_TYPE_LABELS, isSignalLive, type SignalType } from "@/lib/signals";
-import type { Alert, Competitor, ScrapeRun, SignalConfig } from "@/lib/types/database";
+import { FREE_TIER_CADENCE_HOURS } from "@/lib/tier";
+import type { Alert, Competitor, CompetitorSuggestion, ScrapeRun, SignalConfig } from "@/lib/types/database";
 
 /**
  * Who is monitored, and how often.
@@ -34,7 +37,7 @@ import type { Alert, Competitor, ScrapeRun, SignalConfig } from "@/lib/types/dat
  */
 
 const GROUPS: { label: string; signals: SignalType[] }[] = [
-  { label: "Commercial", signals: ["sku_price_change", "promo_discount"] },
+  { label: "Commercial", signals: ["sku_price_change", "promo_discount", "inventory_status"] },
   {
     label: "Storefront",
     signals: ["catalog_change", "website_change", "ad_creative"],
@@ -212,11 +215,14 @@ function SignalRow({
   signal,
   config,
   onChanged,
+  pipelineLive,
 }: {
   competitorId: string;
   signal: SignalType;
   config: SignalConfig | undefined;
   onChanged: (state: CompetitorActionState) => void;
+  /** Once live, cadence is locked to weekly regardless of what is stored — see lib/tier.ts. */
+  pipelineLive: boolean;
 }) {
   const [pending, startTransition] = useTransition();
   const [optimistic, setOptimistic] = useState<{
@@ -259,7 +265,7 @@ function SignalRow({
   }
 
   const enabled = optimistic?.enabled ?? config.enabled;
-  const hours = optimistic?.hours ?? config.frequency_hours;
+  const hours = pipelineLive ? FREE_TIER_CADENCE_HOURS : (optimistic?.hours ?? config.frequency_hours);
 
   const patch = (next: { enabled?: boolean; frequency_hours?: number }) => {
     setOptimistic({
@@ -291,10 +297,11 @@ function SignalRow({
           <div className="mt-1 flex flex-wrap items-center gap-2">
             <select
               value={hours}
-              disabled={!enabled}
+              disabled={!enabled || pipelineLive}
               onChange={(event) =>
                 patch({ frequency_hours: Number(event.target.value) })
               }
+              title={pipelineLive ? "Locked to weekly on the free tier" : undefined}
               className="rounded border border-border bg-surface px-1.5 py-0.5 text-[13px] text-ink-muted
                        disabled:opacity-50 focus:border-accent focus:outline-none"
             >
@@ -304,6 +311,9 @@ function SignalRow({
                 </option>
               ))}
             </select>
+            {pipelineLive ? (
+              <span className="text-[13px] text-ink-faint">free tier limit</span>
+            ) : null}
             {config.last_error ? (
               <button
                 type="button"
@@ -345,12 +355,22 @@ function AddCompetitor({
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
   const [state, setState] = useState<CompetitorActionState | null>(null);
+  const [alternatives, setAlternatives] = useState<CompetitorSuggestion[] | null>(null);
+  const [findingAlternatives, startAlternativesTransition] = useTransition();
+
+  const reset = () => {
+    setState(null);
+    setAlternatives(null);
+  };
 
   if (!open) {
     return (
       <button
         type="button"
-        onClick={() => setOpen(true)}
+        onClick={() => {
+          reset();
+          setOpen(true);
+        }}
         className="rounded-lg bg-solid px-4 py-2 text-[15px] font-medium text-solid-ink transition-colors hover:bg-solid-hover"
       >
         + Add competitor
@@ -359,56 +379,107 @@ function AddCompetitor({
   }
 
   return (
-    <form
-      action={(formData) =>
-        startTransition(async () => {
-          const result = await addCompetitor(
-            { ok: false, error: null, warning: null },
-            formData,
-          );
-          setState(result);
-          onDone(result);
-          if (result.ok) setOpen(false);
-        })
-      }
-      className="flex flex-wrap items-center gap-2"
-    >
-      <input
-        name="name"
-        required
-        placeholder="Name"
-        className="w-40 rounded-lg border border-border bg-surface px-3 py-2 text-[15px] focus:border-accent focus:outline-none"
-      />
-      <input
-        name="url"
-        required
-        placeholder="https://store.com"
-        className="w-56 rounded-lg border border-border bg-surface px-3 py-2 text-[15px] focus:border-accent focus:outline-none"
-      />
-      <button
-        type="submit"
-        disabled={pending}
-        className="rounded-lg bg-solid px-4 py-2 text-[15px] font-medium text-solid-ink transition-colors hover:bg-solid-hover disabled:opacity-50"
+    <div className="flex w-full flex-col gap-3">
+      <form
+        action={(formData) =>
+          startTransition(async () => {
+            reset();
+            const name = String(formData.get("name") ?? "").trim();
+            const url = String(formData.get("url") ?? "").trim();
+            const result = await addCompetitor(
+              { ok: false, error: null, warning: null },
+              formData,
+            );
+            setState(result);
+            onDone(result);
+            if (result.ok) {
+              setOpen(false);
+              return;
+            }
+            // "Real site, wrong platform" gets a second chance: look for a
+            // same-category competitor that actually runs on Shopify, rather
+            // than leaving the operator with only a dead end.
+            if (result.notShopify) {
+              startAlternativesTransition(async () => {
+                const alt = await suggestAlternativesFor(name, url);
+                setAlternatives(alt.suggestions ?? []);
+              });
+            }
+          })
+        }
+        className="flex flex-wrap items-center gap-2"
       >
-        {pending ? "Adding…" : "Add"}
-      </button>
-      <button
-        type="button"
-        onClick={() => setOpen(false)}
-        className="rounded-lg border border-border px-3 py-2 text-[15px] text-ink-muted hover:text-ink"
-      >
-        Cancel
-      </button>
-      {state?.error ? (
-        <p role="alert" className="w-full text-[15px] text-sev-critical">
-          {state.error}
-        </p>
+        <input
+          name="name"
+          required
+          placeholder="Name"
+          className="w-40 rounded-lg border border-border bg-surface px-3 py-2 text-[15px] focus:border-accent focus:outline-none"
+        />
+        <input
+          name="url"
+          required
+          placeholder="https://store.com"
+          className="w-56 rounded-lg border border-border bg-surface px-3 py-2 text-[15px] focus:border-accent focus:outline-none"
+        />
+        <button
+          type="submit"
+          disabled={pending}
+          className="rounded-lg bg-solid px-4 py-2 text-[15px] font-medium text-solid-ink transition-colors hover:bg-solid-hover disabled:opacity-50"
+        >
+          {pending ? "Verifying store…" : "Add"}
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            reset();
+            setOpen(false);
+          }}
+          className="rounded-lg border border-border px-3 py-2 text-[15px] text-ink-muted hover:text-ink"
+        >
+          Cancel
+        </button>
+        {state?.error ? (
+          <p role="alert" className="w-full text-[15px] text-sev-critical">
+            {state.error}
+          </p>
+        ) : null}
+      </form>
+
+      {findingAlternatives ? (
+        <p className="text-[15px] text-ink-muted">Looking for a competitor in the same category we can actually monitor…</p>
       ) : null}
-    </form>
+
+      {alternatives ? (
+        alternatives.length ? (
+          <div>
+            <p className="eyebrow mb-2">Try one of these instead</p>
+            <SuggestionList
+              suggestions={alternatives}
+              onResolved={(id) => {
+                setAlternatives((prev) => prev?.filter((s) => s.id !== id) ?? null);
+                onDone({ ok: true, error: null, warning: null });
+                setOpen(false);
+              }}
+            />
+          </div>
+        ) : (
+          <p className="text-[15px] text-ink-faint">
+            No monitorable alternative turned up either. You can keep looking and add one by
+            hand once you find a Shopify store.
+          </p>
+        )
+      ) : null}
+    </div>
   );
 }
 
-export function Monitoring({ competitors }: { competitors: CompetitorRow[] }) {
+export function Monitoring({
+  competitors,
+  pipelineLive,
+}: {
+  competitors: CompetitorRow[];
+  pipelineLive: boolean;
+}) {
   const [selectedId, setSelectedId] = useState<string | null>(
     competitors[0]?.id ?? null,
   );
@@ -555,6 +626,13 @@ export function Monitoring({ competitors }: { competitors: CompetitorRow[] }) {
                   <p className="truncate text-[13px] text-ink-faint">
                     {competitor.domain}
                   </p>
+                  <p className="mt-1">
+                    <RunProgress
+                      key={competitor.id}
+                      competitorId={competitor.id}
+                      initial={competitor.latestRun}
+                    />
+                  </p>
 
                   <div className="mt-3 flex flex-wrap gap-1.5">
                     {competitor.configs
@@ -599,7 +677,7 @@ export function Monitoring({ competitors }: { competitors: CompetitorRow[] }) {
                           : "bg-sev-low"
                       }`}
                     />
-                    {enabledCount} signals tracked · {7 - enabledCount} coming
+                    {enabledCount} signals tracked · {SIGNAL_TYPES.length - enabledCount} coming
                     soon
                   </p>
                 </div>
@@ -614,7 +692,7 @@ export function Monitoring({ competitors }: { competitors: CompetitorRow[] }) {
           <PanelHeading
             eyebrow="Monitoring contract"
             title={selected.name}
-            description={`Seven defined signals, with ${
+            description={`${SIGNAL_TYPES.length} defined signals, with ${
               selected.configs.filter(
                 (c) => c.enabled && isSignalLive(c.signal_type),
               ).length
@@ -687,6 +765,7 @@ export function Monitoring({ competitors }: { competitors: CompetitorRow[] }) {
                         (c) => c.signal_type === signal,
                       )}
                       onChanged={handle}
+                      pipelineLive={pipelineLive}
                     />
                   ))}
                 </div>

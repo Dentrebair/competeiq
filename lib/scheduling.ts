@@ -49,12 +49,22 @@ export function frequencyToCron(hours: number): string {
   );
 }
 
-/** What a competitor's schedule should look like right now, or null to clear it. */
+/**
+ * What a competitor's schedule should look like right now, or null to clear it.
+ *
+ * `minFrequencyHours`, when given, clamps the cadence to no faster than that —
+ * the free-tier guardrail (lib/tier.ts) enforcing "at most weekly" without
+ * having to rewrite what the operator actually picked in `signal_configs`.
+ * Absent, this behaves exactly as before.
+ */
 export function scheduleFor(
   active: boolean,
   configs: SignalConfigForScheduling[],
+  minFrequencyHours?: number,
 ): { cron: string } | null {
   if (!active) return null;
   const fastest = fastestEnabledFrequency(configs);
-  return fastest === null ? null : { cron: frequencyToCron(fastest) };
+  if (fastest === null) return null;
+  const hours = minFrequencyHours ? Math.max(fastest, minFrequencyHours) : fastest;
+  return { cron: frequencyToCron(hours) };
 }

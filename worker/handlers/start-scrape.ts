@@ -2,6 +2,7 @@ import type { Job } from "pg-boss";
 
 import type { JobData } from "@/lib/queue/jobs";
 import { requireEnv } from "@/lib/env";
+import { FREE_TIER_MAX_PRODUCTS_PER_COMPETITOR } from "@/lib/tier";
 import { log, logError } from "../log";
 import { getScrapeTarget, recordScrapeRun } from "../db";
 import { enqueueFromWorker } from "../queue-client";
@@ -10,9 +11,10 @@ const APIFY_API_URL = "https://api.apify.com/v2";
 
 /**
  * trovevault/shopify-products-scraper — verified live against the actor and
- * the exact input n8n's last production run used (2026-09-14): domains,
- * maxProducts: 100 (not the actor's example of 10), and residential proxies.
- * One fixed actor for every competitor, so this is a constant, not config.
+ * the exact input n8n's last production run used (2026-09-14): domains, a
+ * residential proxy, and maxProducts capped to the free-tier product limit
+ * (lib/tier.ts) to protect the Apify free plan's budget. One fixed actor for
+ * every competitor, so this is a constant, not config.
  */
 const ACTOR_ID = "dsYHmuqeHvtR7NYxx";
 
@@ -85,7 +87,7 @@ async function startApifyRun(url: string): Promise<{ id: string }> {
       },
       body: JSON.stringify({
         domains: [url],
-        maxProducts: 100,
+        maxProducts: FREE_TIER_MAX_PRODUCTS_PER_COMPETITOR,
         proxyConfiguration: { useApifyProxy: true, apifyProxyGroups: ["RESIDENTIAL"] },
       }),
     },

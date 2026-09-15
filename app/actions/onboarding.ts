@@ -12,7 +12,7 @@ import {
 import { requireUser } from "@/lib/dal";
 import {
   fetchPageText,
-  isMonitorable,
+  isPipelineMonitorable,
   normaliseStoreUrl,
   readStore,
   type CatalogueSource,
@@ -36,7 +36,8 @@ import type { BrandProfile, CompetitorSuggestion } from "@/lib/types/database";
  */
 
 export interface BrandProfileDraft {
-  url: string;
+  /** Null when there is no website — see readStoreDraftFromDescription. */
+  url: string | null;
   name: string | null;
   platform: string;
   catalogueSource: CatalogueSource;
@@ -242,6 +243,97 @@ export async function readStoreDraft(rawUrl: string): Promise<DraftResult> {
   }
 }
 
+const DESCRIPTION_SYSTEM = `You read a short, first-person description of an ecommerce business and turn it into a structured profile.
+
+Two rules:
+
+- Do not invent. If the description does not tell you the audience or how the
+  business positions itself, say it is unclear rather than guessing — everything
+  downstream treats your answer as fact.
+- Keep any brand name exactly as given. Do not invent one if none is given.`;
+
+/**
+ * A draft for a business with no website at all — a few typed sentences
+ * instead of a URL to read. Same review screen and same schema as
+ * readStoreDraft, so the operator's experience differs only in what they typed
+ * to get there; catalogueSource is 'described' rather than any of the tiers
+ * readStore produces, since there is no catalogue to be more or less certain
+ * about.
+ */
+export async function readStoreDraftFromDescription(rawDescription: string): Promise<DraftResult> {
+  await requireUser();
+
+  const description = rawDescription.trim();
+  if (!description) {
+    return { ok: false, error: "Describe your business in a few sentences first." };
+  }
+
+  const base: BrandProfileDraft = {
+    url: null,
+    name: null,
+    platform: "none",
+    catalogueSource: "described",
+    categories: [],
+    productCount: null,
+    priceMin: null,
+    priceMax: null,
+    currency: null,
+    audience: null,
+    positioning: null,
+    note: "No website yet — this profile is based entirely on what you described.",
+  };
+
+  if (!isAnthropicConfigured()) {
+    return {
+      ok: true,
+      draft: {
+        ...base,
+        note: `${base.note} Categories, audience and positioning were not filled in — ANTHROPIC_API_KEY is not set.`,
+      },
+    };
+  }
+
+  try {
+    const message = await anthropic().messages.create({
+      model: ANALYSIS_MODEL,
+      max_tokens: 16000,
+      thinking: { type: "adaptive" },
+      output_config: {
+        effort: "medium",
+        format: { type: "json_schema", schema: INTERPRETATION_SCHEMA },
+      },
+      system: [
+        { type: "text", text: DESCRIPTION_SYSTEM, cache_control: { type: "ephemeral" } },
+      ],
+      messages: [{ role: "user", content: description }],
+    });
+
+    const text = textFromMessage(message);
+    if (!text.ok) return { ok: true, draft: base };
+
+    const parsed = JSON.parse(text.text) as {
+      name: string;
+      categories: string[];
+      audience: string;
+      positioning: string;
+    };
+
+    return {
+      ok: true,
+      draft: {
+        ...base,
+        name: parsed.name || null,
+        categories: parsed.categories ?? [],
+        audience: parsed.audience,
+        positioning: parsed.positioning,
+      },
+    };
+  } catch (error) {
+    console.error("[onboarding] description interpretation failed:", error);
+    return { ok: true, draft: base };
+  }
+}
+
 /**
  * Save the reviewed draft. One row, updated in place.
  *
@@ -327,9 +419,15 @@ interface Candidate {
   rationale: string;
 }
 
+/** Bare domain, no scheme, no www, no trailing slash. */
+function bareDomain(input: string): string {
+  return input.replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/$/, "");
+}
+
 /** The profile, condensed to what a competitor search needs. */
 function profileBrief(profile: BrandProfile): string {
-  const lines = [`Brand: ${profile.name ?? profile.url}`, `Store: ${profile.url}`];
+  const lines = [`Brand: ${profile.name ?? profile.url ?? "the operator's business"}`];
+  lines.push(profile.url ? `Store: ${profile.url}` : "Store: none — this business has no website yet.");
   if (profile.categories.length) lines.push(`Sells: ${profile.categories.join(", ")}`);
   if (profile.price_min !== null && profile.price_max !== null) {
     const unit = profile.currency ? `${profile.currency} ` : "";
@@ -340,58 +438,37 @@ function profileBrief(profile: BrandProfile): string {
   return lines.join("\n");
 }
 
-/**
- * Propose competitors, then prove each one before offering it.
- *
- * Two model calls rather than one, deliberately. Finding competitors needs web
- * search; constraining an answer to a JSON schema is cleanest without tools in
- * play. So: search first and let it answer in prose, then extract that prose into
- * structure in a second, tool-free call. This runs once per install, so the extra
- * call costs nothing that matters.
- *
- * Then the part that actually determines whether a suggestion is worth showing:
- * every candidate is fetched. A model will produce a plausible domain that does
- * not resolve, or one that resolves to a blog. Only sites whose catalogue could
- * genuinely be read are stored — because an unmonitorable competitor does not
- * fail now, it fails silently in three days when no signals ever arrive.
- */
-export async function suggestCompetitors(): Promise<{
+export interface SuggestionResult {
   ok: boolean;
   suggestions?: CompetitorSuggestion[];
   error?: string;
   /** Candidates that were proposed but could not be verified. Worth surfacing. */
   rejected?: { domain: string; reason: string }[];
-}> {
-  await requireUser();
+}
 
-  if (!isAnthropicConfigured()) {
-    return { ok: false, error: "Competitor suggestions need ANTHROPIC_API_KEY. You can still add competitors by hand." };
-  }
-
+/**
+ * Propose competitors from a search prompt, then prove each one before
+ * offering it. Shared by both entry points: onboarding's "who you might want
+ * to watch" and the Add Competitor fallback when a typed-in URL cannot be
+ * monitored.
+ *
+ * Two model calls rather than one, deliberately. Finding competitors needs web
+ * search; constraining an answer to a JSON schema is cleanest without tools in
+ * play. So: search first and let it answer in prose, then extract that prose into
+ * structure in a second, tool-free call.
+ *
+ * Then the part that actually determines whether a suggestion is worth showing:
+ * every candidate is fetched, and only Shopify stores our own pipeline can
+ * actually scrape are kept (`isPipelineMonitorable`) — a WooCommerce or
+ * blog-shaped result is real evidence of a real business, but suggesting it
+ * here would recreate the exact "added, then never produces a signal" failure
+ * this whole flow exists to prevent.
+ */
+async function searchAndVerifyCompetitors(
+  searchPrompt: string,
+  excluded: Set<string>,
+): Promise<SuggestionResult> {
   const supabase = await createClient();
-
-  const [{ data: profileRow }, { data: existing }, { data: seen }] = await Promise.all([
-    supabase.from("brand_profile").select("*").limit(1).maybeSingle(),
-    supabase.from("competitors").select("domain"),
-    supabase.from("competitor_suggestions").select("domain"),
-  ]);
-
-  const profile = profileRow as BrandProfile | null;
-  if (!profile) {
-    return { ok: false, error: "Read your store first — suggestions are based on what you sell." };
-  }
-
-  // Never re-propose something already monitored or already dismissed. A product
-  // that keeps suggesting the site you rejected reads as not listening.
-  const excluded = new Set<string>([
-    profile.url.replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/$/, ""),
-    ...((existing ?? []) as { domain: string }[]).map((row) => row.domain),
-    ...((seen ?? []) as { domain: string }[]).map((row) => row.domain),
-  ]);
-
-  const excludeLine = excluded.size
-    ? `\n\nDo not propose any of these, they are already known: ${[...excluded].join(", ")}`
-    : "";
 
   let prose: string;
   try {
@@ -401,20 +478,7 @@ export async function suggestCompetitors(): Promise<{
       thinking: { type: "adaptive" },
       output_config: { effort: "high" },
       tools: [{ type: "web_search_20260209", name: "web_search", max_uses: 6 }],
-      messages: [
-        {
-          role: "user",
-          content: `Find direct competitors for this ecommerce brand — other online stores selling comparable products to comparable customers.
-
-${profileBrief(profile)}${excludeLine}
-
-Look for brands that genuinely overlap on what they sell and who they sell to, not
-merely the biggest names in the category. A giant marketplace is not a useful
-competitor for a small brand.
-
-Name up to eight, each with its website domain and one sentence on what overlaps.`,
-        },
-      ],
+      messages: [{ role: "user", content: searchPrompt }],
     });
 
     const text = textFromMessage(search);
@@ -451,7 +515,7 @@ Name up to eight, each with its website domain and one sentence on what overlaps
   }
 
   const fresh = candidates.filter((candidate) => {
-    const domain = candidate.domain.replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/$/, "");
+    const domain = bareDomain(candidate.domain);
     return domain && !excluded.has(domain);
   });
 
@@ -472,10 +536,16 @@ Name up to eight, each with its website domain and one sentence on what overlaps
   const rows = [];
 
   for (const { candidate, read } of verified) {
-    if (!isMonitorable(read) || !read) {
+    if (!read) {
+      rejected.push({ domain: candidate.domain, reason: "Could not be reached." });
+      continue;
+    }
+    if (!isPipelineMonitorable(read)) {
       rejected.push({
         domain: candidate.domain,
-        reason: read?.note ?? "Could not be reached.",
+        reason: read.reachable
+          ? `${read.note} Not a Shopify store, so it can't be monitored yet.`
+          : read.note,
       });
       continue;
     }
@@ -511,6 +581,101 @@ Name up to eight, each with its website domain and one sentence on what overlaps
   if (error) return { ok: false, error: error.message };
 
   return { ok: true, suggestions: (saved ?? []) as CompetitorSuggestion[], rejected };
+}
+
+/** Who the operator's own business competes with — driven by their brand profile. */
+export async function suggestCompetitors(): Promise<SuggestionResult> {
+  await requireUser();
+
+  if (!isAnthropicConfigured()) {
+    return { ok: false, error: "Competitor suggestions need ANTHROPIC_API_KEY. You can still add competitors by hand." };
+  }
+
+  const supabase = await createClient();
+
+  const [{ data: profileRow }, { data: existing }, { data: seen }] = await Promise.all([
+    supabase.from("brand_profile").select("*").limit(1).maybeSingle(),
+    supabase.from("competitors").select("domain"),
+    supabase.from("competitor_suggestions").select("domain"),
+  ]);
+
+  const profile = profileRow as BrandProfile | null;
+  if (!profile) {
+    return { ok: false, error: "Read your store first — suggestions are based on what you sell." };
+  }
+
+  // Never re-propose something already monitored or already dismissed. A product
+  // that keeps suggesting the site you rejected reads as not listening.
+  const excluded = new Set<string>([
+    ...(profile.url ? [bareDomain(profile.url)] : []),
+    ...((existing ?? []) as { domain: string }[]).map((row) => row.domain),
+    ...((seen ?? []) as { domain: string }[]).map((row) => row.domain),
+  ]);
+
+  const excludeLine = excluded.size
+    ? `\n\nDo not propose any of these, they are already known: ${[...excluded].join(", ")}`
+    : "";
+
+  return searchAndVerifyCompetitors(
+    `Find direct competitors for this ecommerce brand — other online stores selling comparable products to comparable customers.
+
+${profileBrief(profile)}${excludeLine}
+
+Look for brands that genuinely overlap on what they sell and who they sell to, not
+merely the biggest names in the category. A giant marketplace is not a useful
+competitor for a small brand.
+
+Name up to eight, each with its website domain and one sentence on what overlaps.`,
+    excluded,
+  );
+}
+
+/**
+ * Who else to try, when the site an operator just typed into "Add competitor"
+ * turned out unreachable or not on Shopify.
+ *
+ * Keyed on the failed attempt itself, not the operator's own brand profile —
+ * "kfc.com won't work, try mcdonalds.com or burgerking.com" is a same-category
+ * substitution, a different question from "who competes with my own store".
+ */
+export async function suggestAlternativesFor(
+  failedName: string,
+  failedUrl: string,
+): Promise<SuggestionResult> {
+  await requireUser();
+
+  if (!isAnthropicConfigured()) {
+    return { ok: false, error: "Competitor suggestions need ANTHROPIC_API_KEY." };
+  }
+
+  const supabase = await createClient();
+
+  const [{ data: existing }, { data: seen }] = await Promise.all([
+    supabase.from("competitors").select("domain"),
+    supabase.from("competitor_suggestions").select("domain"),
+  ]);
+
+  const excluded = new Set<string>([
+    bareDomain(failedUrl),
+    ...((existing ?? []) as { domain: string }[]).map((row) => row.domain),
+    ...((seen ?? []) as { domain: string }[]).map((row) => row.domain),
+  ]);
+
+  const excludeLine = excluded.size
+    ? `\n\nDo not propose any of these, they are already known: ${[...excluded].join(", ")}`
+    : "";
+
+  return searchAndVerifyCompetitors(
+    `"${failedName}" (${bareDomain(failedUrl)}) cannot be added as a monitored competitor here — it is either unreachable or does not run its storefront on Shopify, which is the only platform this product can currently monitor.
+
+Find direct competitors — brands in the exact same specific product category, selling to
+genuinely comparable customers, who run their own Shopify store. Favor close, same-category
+substitutes (for a fried-chicken chain, other fried-chicken or burger chains — not a pizza
+chain) over merely the biggest names in the broader industry.${excludeLine}
+
+Name up to eight, each with its website domain and one sentence on what overlaps.`,
+    excluded,
+  );
 }
 
 /** Turn a suggestion into a monitored competitor, reusing the normal add path. */

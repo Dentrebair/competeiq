@@ -3,10 +3,17 @@
 import { revalidatePath } from "next/cache";
 
 import { requireUser } from "@/lib/dal";
+import { isPipelineLive } from "@/lib/pipeline-mode";
 import { enqueue, isQueueConfigured, setSchedule, clearSchedule } from "@/lib/queue/intake";
 import { scheduleFor } from "@/lib/scheduling";
 import { DEFAULT_FREQUENCY_HOURS, SIGNAL_TYPES, type SignalType } from "@/lib/signals";
+import { isPipelineMonitorable, normaliseStoreUrl, readStore } from "@/lib/store-reader";
 import { createClient } from "@/lib/supabase/server";
+import {
+  FREE_TIER_CADENCE_HOURS,
+  FREE_TIER_MAX_COMPETITORS,
+  FREE_TIER_RUN_NOW_COOLDOWN_HOURS,
+} from "@/lib/tier";
 
 export interface CompetitorActionState {
   ok: boolean;
@@ -17,6 +24,13 @@ export interface CompetitorActionState {
    * exists and is editable; it simply is not scheduled to scrape yet.
    */
   warning: string | null;
+  /**
+   * Set only when `error` is specifically "reachable, but not a Shopify
+   * store" — distinct from an unreachable/malformed URL, which has no
+   * alternatives worth offering. The UI uses this to trigger
+   * `suggestAlternativesFor` rather than parsing the error string.
+   */
+  notShopify?: boolean;
 }
 
 const EMPTY: CompetitorActionState = { ok: false, error: null, warning: null };
@@ -84,6 +98,7 @@ async function syncCompetitorSchedule(
         frequency_hours: c.frequency_hours,
         enabled: c.enabled,
       })),
+      (await isPipelineLive()) ? FREE_TIER_CADENCE_HOURS : undefined,
     );
 
     if (schedule) {
@@ -113,6 +128,17 @@ async function syncCompetitorSchedule(
  * warning rather than rolling back — a competitor that exists but is not yet
  * scheduled is recoverable with one click (Sync), whereas losing the
  * operator's typed input to a transient queue error is not.
+ *
+ * Validation runs in two stages before any of that, because "wrong URL" and
+ * "real site, wrong platform" are different problems with different fixes:
+ *
+ *  1. Format + reachability (`deriveDomain`, then an actual fetch via
+ *     `readStore`) — catches typos and dead links instantly.
+ *  2. Platform compatibility (`isPipelineMonitorable`) — the worker's Apify
+ *     actor only reads Shopify stores, so a real, live, non-Shopify site is
+ *     rejected here rather than silently never producing a signal three days
+ *     from now. `notShopify: true` on the result tells the UI to offer
+ *     same-category alternatives instead of just showing an error.
  */
 export async function addCompetitor(
   _prev: CompetitorActionState,
@@ -127,15 +153,37 @@ export async function addCompetitor(
     return { ...EMPTY, error: "Name and URL are both required." };
   }
 
+  const supabase = await createClient();
+
+  if (await isPipelineLive()) {
+    const { count } = await supabase.from("competitors").select("id", { count: "exact", head: true });
+    if ((count ?? 0) >= FREE_TIER_MAX_COMPETITORS) {
+      return {
+        ...EMPTY,
+        error: `The free tier can monitor at most ${FREE_TIER_MAX_COMPETITORS} competitors at once.`,
+      };
+    }
+  }
+
   const domain = deriveDomain(rawUrl);
-  if (!domain) {
+  if (!domain || !normaliseStoreUrl(rawUrl)) {
     return { ...EMPTY, error: `"${rawUrl}" is not a valid URL.` };
+  }
+
+  const read = await readStore(rawUrl);
+  if (!read || !read.reachable) {
+    return { ...EMPTY, error: read?.note ?? `"${rawUrl}" could not be reached — check the address.` };
+  }
+  if (!isPipelineMonitorable(read)) {
+    return {
+      ...EMPTY,
+      error: `${read.note} This product can currently only monitor Shopify stores.`,
+      notShopify: true,
+    };
   }
 
   // Normalise so the stored URL always has a scheme.
   const url = rawUrl.includes("://") ? rawUrl : `https://${rawUrl}`;
-
-  const supabase = await createClient();
 
   const { data: competitor, error } = await supabase
     .from("competitors")
@@ -263,12 +311,39 @@ export async function setCompetitorActive(
  * Deliberately not deduped beyond the queue's own "short" policy (at most one
  * start_scrape waiting per competitor) — a second click while one is already
  * queued collapses harmlessly rather than erroring.
+ *
+ * The free-tier cooldown is a separate, coarser check on top of that: once
+ * live, at most one Run Now per competitor per
+ * FREE_TIER_RUN_NOW_COOLDOWN_HOURS, checked against the last row in
+ * scrape_runs regardless of how it started (schedule or a previous Run Now).
  */
 export async function runCompetitorNow(competitorId: string): Promise<CompetitorActionState> {
   await requireUser();
 
   if (!isQueueConfigured()) {
     return { ...EMPTY, error: "The pipeline queue is not configured." };
+  }
+
+  if (await isPipelineLive()) {
+    const supabase = await createClient();
+    const { data: lastRun } = await supabase
+      .from("scrape_runs")
+      .select("started_at")
+      .eq("competitor_id", competitorId)
+      .order("started_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (lastRun) {
+      const elapsedHours = (Date.now() - new Date(lastRun.started_at).getTime()) / 3_600_000;
+      if (elapsedHours < FREE_TIER_RUN_NOW_COOLDOWN_HOURS) {
+        const remaining = Math.ceil(FREE_TIER_RUN_NOW_COOLDOWN_HOURS - elapsedHours);
+        return {
+          ...EMPTY,
+          error: `Run Now is limited to once every ${FREE_TIER_RUN_NOW_COOLDOWN_HOURS}h on the free tier — try again in about ${remaining}h.`,
+        };
+      }
+    }
   }
 
   try {

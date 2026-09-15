@@ -1,6 +1,7 @@
 import { Monitoring, type CompetitorRow } from "@/components/competitors/monitoring";
 import { PageHeader } from "@/components/page-header";
 import { requireUser } from "@/lib/dal";
+import { isPipelineLive } from "@/lib/pipeline-mode";
 import { SIGNAL_TYPES } from "@/lib/signals";
 import { createClient } from "@/lib/supabase/server";
 import type { Alert, Competitor, ScrapeRun, SignalConfig } from "@/lib/types/database";
@@ -15,7 +16,7 @@ export default async function CompetitorsPage() {
   // Four flat reads rather than PostgREST embeds. `Relationships: []` in the
   // generated types means embedded-resource syntax is not typed here, and at
   // this scale joining in JS costs nothing.
-  const [competitorsResult, configsResult, alertsResult, scrapeRunsResult] = await Promise.all([
+  const [competitorsResult, configsResult, alertsResult, scrapeRunsResult, pipelineLive] = await Promise.all([
     supabase
       .from("competitors")
       .select("*")
@@ -34,6 +35,7 @@ export default async function CompetitorsPage() {
       .select("*")
       .order("started_at", { ascending: false })
       .limit(200),
+    isPipelineLive(),
   ]);
 
   const error = competitorsResult.error ?? configsResult.error;
@@ -90,7 +92,7 @@ export default async function CompetitorsPage() {
           </p>
         </div>
       ) : (
-        <Monitoring competitors={competitors} />
+        <Monitoring competitors={competitors} pipelineLive={pipelineLive} />
       )}
     </main>
   );
