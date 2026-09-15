@@ -83,8 +83,8 @@ function Toggle({
         onChange={(event) => onChange(event.target.checked)}
         className="peer sr-only"
       />
-      <span className="block h-6 w-11 rounded-full bg-border-strong transition-colors peer-checked:bg-accent peer-disabled:opacity-40 peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-accent" />
-      <span className="absolute left-1 top-1 size-4 rounded-full bg-surface transition-transform peer-checked:translate-x-5 peer-disabled:opacity-60" />
+      <span className="block h-7 w-12 rounded-full bg-border-strong shadow-inner transition-colors peer-checked:bg-accent peer-disabled:opacity-40 peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-accent" />
+      <span className="absolute left-1 top-1 size-5 rounded-full bg-surface shadow-sm transition-transform peer-checked:translate-x-5 peer-disabled:opacity-60" />
     </label>
   );
 }
@@ -189,14 +189,14 @@ function RunProgress({
   }, [competitorId, instanceId]);
 
   if (!run) {
-    return <span className="text-[13px] text-ink-faint">Never run</span>;
+    return <span className="text-sm text-ink-faint">Never run</span>;
   }
 
   const active = isRunActive(run);
 
   return (
     <span
-      className={`inline-flex items-center gap-1.5 text-[13px] ${
+      className={`inline-flex items-center gap-1.5 text-sm ${
         run.status === "failed" ? "text-sev-critical" : "text-ink-faint"
       }`}
       title={run.error ?? undefined}
@@ -253,13 +253,13 @@ function SignalRow({
   if (!isSignalLive(signal) || !config) {
     const comingSoon = !isSignalLive(signal);
     return (
-      <div className="hatched flex items-center justify-between gap-3 rounded-lg border border-border px-4 py-3">
+      <div className="hatched flex items-center justify-between gap-3 rounded-xl border border-border px-4 py-3.5">
         <div className="min-w-0">
-          <p className="flex items-center gap-2 text-[15px] font-medium text-ink-muted">
+          <p className="flex items-center gap-2 text-base font-medium text-ink-muted">
             <SignalIcon type={signal} className="size-4" />
             {SIGNAL_TYPE_LABELS[signal]}
           </p>
-          <p className="mt-0.5 text-[13px] text-ink-faint">
+          <p className="mt-0.5 text-sm text-ink-faint">
             {comingSoon
               ? "Coming soon · not collected yet"
               : "Not set up for this competitor"}
@@ -295,13 +295,13 @@ function SignalRow({
 
   return (
     <div
-      className={`rounded-lg border border-border px-4 py-3 transition-opacity ${
+      className={`rounded-xl border border-border px-4 py-3.5 transition-opacity ${
         pending ? "opacity-70" : ""
       }`}
     >
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <p className="flex items-center gap-2 text-[15px] font-medium text-ink">
+          <p className="flex items-center gap-2 text-base font-medium text-ink">
             <SignalIcon type={signal} className="size-4" />
             {SIGNAL_TYPE_LABELS[signal]}
           </p>
@@ -313,7 +313,7 @@ function SignalRow({
                 patch({ frequency_hours: Number(event.target.value) })
               }
               title={pipelineLive ? "Locked to weekly on the free tier" : undefined}
-              className="rounded border border-border bg-surface px-1.5 py-0.5 text-[13px] text-ink-muted
+              className="rounded border border-border bg-surface px-1.5 py-0.5 text-sm text-ink-muted
                        disabled:opacity-50 focus:border-accent focus:outline-none"
             >
               {CADENCE_CHOICES.map((choice) => (
@@ -323,23 +323,23 @@ function SignalRow({
               ))}
             </select>
             {pipelineLive ? (
-              <span className="text-[13px] text-ink-faint">free tier limit</span>
+              <span className="text-sm text-ink-faint">free tier limit</span>
             ) : null}
             {config.last_error ? (
               <button
                 type="button"
                 onClick={() => setErrorOpen((open) => !open)}
                 aria-expanded={errorOpen}
-                className="max-w-48 truncate text-[13px] text-sev-critical underline decoration-dotted underline-offset-2 hover:text-sev-critical"
+                className="max-w-48 truncate text-sm text-sev-critical underline decoration-dotted underline-offset-2 hover:text-sev-critical"
               >
                 {errorOpen ? "Hide error" : "Failed — why?"}
               </button>
             ) : config.last_run_at ? (
-              <span className="text-[13px] text-ink-faint">
+              <span className="text-sm text-ink-faint">
                 ran <TimeAgo iso={config.last_run_at} />
               </span>
             ) : (
-              <span className="text-[13px] text-ink-faint">not run yet</span>
+              <span className="text-sm text-ink-faint">not run yet</span>
             )}
           </div>
         </div>
@@ -350,7 +350,7 @@ function SignalRow({
         />
       </div>
       {errorOpen && config.last_error ? (
-        <p className="mt-2 rounded-lg bg-sev-critical-wash px-3 py-2 text-[13px] text-sev-critical">
+        <p className="mt-2 rounded-lg bg-sev-critical-wash px-3 py-2 text-sm text-sev-critical">
           {config.last_error}
         </p>
       ) : null}
@@ -382,7 +382,7 @@ function AddCompetitor({
           reset();
           setOpen(true);
         }}
-        className="rounded-lg bg-solid px-4 py-2 text-[15px] font-medium text-solid-ink transition-colors hover:bg-solid-hover"
+        className="rounded-xl bg-solid px-5 py-3 text-base font-semibold text-solid-ink transition-all hover:bg-solid-hover hover:shadow-md"
       >
         + Add competitor
       </button>
@@ -418,24 +418,24 @@ function AddCompetitor({
             }
           })
         }
-        className="flex flex-wrap items-center gap-2"
+        className="flex flex-wrap items-center gap-2.5"
       >
         <input
           name="name"
           required
           placeholder="Name"
-          className="w-40 rounded-lg border border-border bg-surface px-3 py-2 text-[15px] focus:border-accent focus:outline-none"
+          className="w-44 rounded-xl border border-border bg-surface px-4 py-2.5 text-base focus:border-accent focus:outline-2 focus:outline-offset-0 focus:outline-accent"
         />
         <input
           name="url"
           required
           placeholder="https://store.com"
-          className="w-56 rounded-lg border border-border bg-surface px-3 py-2 text-[15px] focus:border-accent focus:outline-none"
+          className="w-60 rounded-xl border border-border bg-surface px-4 py-2.5 text-base focus:border-accent focus:outline-2 focus:outline-offset-0 focus:outline-accent"
         />
         <button
           type="submit"
           disabled={pending}
-          className="rounded-lg bg-solid px-4 py-2 text-[15px] font-medium text-solid-ink transition-colors hover:bg-solid-hover disabled:opacity-50"
+          className="rounded-xl bg-solid px-5 py-2.5 text-base font-semibold text-solid-ink transition-all hover:bg-solid-hover hover:shadow-md disabled:opacity-50"
         >
           {pending ? "Verifying store…" : "Add"}
         </button>
@@ -445,19 +445,19 @@ function AddCompetitor({
             reset();
             setOpen(false);
           }}
-          className="rounded-lg border border-border px-3 py-2 text-[15px] text-ink-muted hover:text-ink"
+          className="rounded-xl border border-border px-4 py-2.5 text-base font-medium text-ink-muted transition-all hover:border-border-strong hover:text-ink"
         >
           Cancel
         </button>
         {state?.error ? (
-          <p role="alert" className="w-full text-[15px] text-sev-critical">
+          <p role="alert" className="w-full text-base text-sev-critical">
             {state.error}
           </p>
         ) : null}
       </form>
 
       {findingAlternatives ? (
-        <p className="text-[15px] text-ink-muted">Looking for a competitor in the same category we can actually monitor…</p>
+        <p className="text-base text-ink-muted">Looking for a competitor in the same category we can actually monitor…</p>
       ) : null}
 
       {alternatives ? (
@@ -474,7 +474,7 @@ function AddCompetitor({
             />
           </div>
         ) : (
-          <p className="text-[15px] text-ink-faint">
+          <p className="text-base text-ink-faint">
             No monitorable alternative turned up either. You can keep looking and add one by
             hand once you find a Shopify store.
           </p>
@@ -532,8 +532,8 @@ export function Monitoring({
   };
 
   return (
-    <div className="flex flex-col gap-4 px-8">
-      <Panel className="p-5">
+    <div className="flex flex-col gap-6 px-8">
+      <Panel className="p-6">
         <PanelHeading
           eyebrow="Monitoring portfolio"
           title={`${totals.monitored} active ${totals.monitored === 1 ? "competitor" : "competitors"}`}
@@ -546,7 +546,7 @@ export function Monitoring({
               ].map(([label, value]) => (
                 <div key={label as string}>
                   <p className="eyebrow">{label}</p>
-                  <p className="tabular mt-1 text-xl font-semibold text-ink">
+                  <p className="tabular mt-1 text-2xl font-bold text-ink">
                     {value}
                   </p>
                 </div>
@@ -559,18 +559,18 @@ export function Monitoring({
         {notice ? (
           <p
             role="status"
-            className="mt-4 rounded-lg bg-sev-high-wash px-3 py-2 text-[15px] text-sev-high"
+            className="mt-4 rounded-lg bg-sev-high-wash px-3 py-2 text-base text-sev-high"
           >
             {notice}
           </p>
         ) : null}
 
         {competitors.length === 0 ? (
-          <p className="mt-6 rounded-xl border border-dashed border-border-strong p-8 text-[15px] text-ink-muted">
+          <p className="mt-6 rounded-xl border border-dashed border-border-strong p-8 text-base text-ink-muted">
             No competitors yet. Add one to start collecting changes.
           </p>
         ) : (
-          <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {competitors.map((competitor) => {
               const active = selected?.id === competitor.id;
               const enabledCount = competitor.configs.filter(
@@ -588,16 +588,16 @@ export function Monitoring({
                       setSelectedId(competitor.id);
                     }
                   }}
-                  className={`cursor-pointer rounded-xl border p-4 text-left transition-colors ${
+                  className={`cursor-pointer rounded-2xl border p-5 text-left shadow-sm transition-all hover:shadow-md ${
                     active
-                      ? "border-accent bg-accent-wash/40"
+                      ? "border-accent bg-accent-wash/40 shadow-md"
                       : "border-border bg-surface hover:border-border-strong"
                   }`}
                 >
                   <div className="flex items-start justify-between gap-2">
                     <span
                       aria-hidden
-                      className="grid size-10 shrink-0 place-items-center rounded-full border border-border bg-surface-sunken text-[13px] font-semibold text-ink-muted"
+                      className="grid size-12 shrink-0 place-items-center rounded-full border border-border bg-surface-sunken text-base font-semibold text-ink-muted"
                     >
                       {competitor.name.slice(0, 2).toUpperCase()}
                     </span>
@@ -613,7 +613,7 @@ export function Monitoring({
                           ? "Pause monitoring"
                           : "Resume monitoring"
                       }
-                      className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium transition-opacity hover:opacity-80 disabled:opacity-50 ${
+                      className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-semibold transition-all hover:scale-105 hover:opacity-90 disabled:opacity-50 ${
                         competitor.active
                           ? "bg-sev-low-wash text-sev-low"
                           : "bg-surface-sunken text-ink-faint"
@@ -621,7 +621,7 @@ export function Monitoring({
                     >
                       <span
                         aria-hidden
-                        className="size-1.5 rounded-full bg-current"
+                        className="size-2 rounded-full bg-current"
                       />
                       {togglingId === competitor.id
                         ? "…"
@@ -631,13 +631,13 @@ export function Monitoring({
                     </button>
                   </div>
 
-                  <p className="mt-3 text-base font-semibold text-ink">
+                  <p className="mt-4 text-lg font-semibold text-ink">
                     {competitor.name}
                   </p>
-                  <p className="truncate text-[13px] text-ink-faint">
+                  <p className="truncate text-sm text-ink-faint">
                     {competitor.domain}
                   </p>
-                  <p className="mt-1">
+                  <p className="mt-1.5">
                     <RunProgress
                       key={competitor.id}
                       competitorId={competitor.id}
@@ -645,7 +645,7 @@ export function Monitoring({
                     />
                   </p>
 
-                  <div className="mt-3 flex flex-wrap gap-1.5">
+                  <div className="mt-3.5 flex flex-wrap gap-1.5">
                     {competitor.configs
                       .filter((c) => c.enabled && isSignalLive(c.signal_type))
                       .map((c) => (
@@ -658,26 +658,26 @@ export function Monitoring({
                       ))}
                   </div>
 
-                  <div className="mt-3 rounded-lg bg-surface-sunken px-3 py-2">
+                  <div className="mt-4 rounded-xl bg-surface-sunken px-4 py-3">
                     <p className="eyebrow">Latest change</p>
                     {competitor.latest ? (
                       <>
-                        <p className="mt-1 line-clamp-2 text-[15px] font-medium text-ink">
+                        <p className="mt-1.5 line-clamp-2 text-base font-medium text-ink">
                           {competitor.latest.summary}
                         </p>
                         <TimeAgo
                           iso={competitor.latest.created_at}
-                          className="mt-0.5 block text-[13px] text-ink-faint"
+                          className="mt-1 block text-sm text-ink-faint"
                         />
                       </>
                     ) : (
-                      <p className="mt-1 text-[15px] text-ink-faint">
+                      <p className="mt-1.5 text-base text-ink-faint">
                         Nothing collected yet
                       </p>
                     )}
                   </div>
 
-                  <p className="tabular mt-3 flex items-center gap-2 text-[13px] text-ink-muted">
+                  <p className="tabular mt-4 flex items-center gap-2 text-sm text-ink-muted">
                     <span
                       aria-hidden
                       className={`size-1.5 rounded-full ${
@@ -699,7 +699,7 @@ export function Monitoring({
       </Panel>
 
       {selected ? (
-        <Panel className="p-5">
+        <Panel className="p-6">
           <PanelHeading
             eyebrow="Monitoring contract"
             title={selected.name}
@@ -713,13 +713,13 @@ export function Monitoring({
                 <button
                   type="button"
                   onClick={() => setManaging((open) => !open)}
-                  className="rounded-lg border border-border px-3.5 py-2 text-[15px] font-medium text-ink-muted transition-colors hover:border-border-strong hover:text-ink"
+                  className="rounded-xl border border-border px-4 py-2.5 text-base font-semibold text-ink-muted transition-all hover:border-border-strong hover:text-ink hover:shadow-sm"
                 >
                   {managing ? "Done" : "Manage monitoring"}
                 </button>
                 <Link
                   href={`/intelligence`}
-                  className="rounded-lg bg-solid px-3.5 py-2 text-[15px] font-medium text-solid-ink transition-colors hover:bg-solid-hover"
+                  className="rounded-xl bg-solid px-4 py-2.5 text-base font-semibold text-solid-ink transition-all hover:bg-solid-hover hover:shadow-md"
                 >
                   Open intelligence
                 </Link>
@@ -738,9 +738,9 @@ export function Monitoring({
                   >
                     <SignalTag
                       type={c.signal_type}
-                      className="text-[15px] font-medium"
+                      className="text-base font-medium"
                     />
-                    <span className="text-[13px] text-ink-faint">
+                    <span className="text-sm text-ink-faint">
                       {cadenceLabel(c.frequency_hours)}
                     </span>
                   </span>
@@ -748,10 +748,10 @@ export function Monitoring({
               {SIGNAL_TYPES.filter((t) => !isSignalLive(t)).map((t) => (
                 <span
                   key={t}
-                  className="hatched inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-[15px] text-ink-faint"
+                  className="hatched inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-base text-ink-faint"
                 >
                   {SIGNAL_TYPE_LABELS[t]}
-                  <span className="text-[13px]">coming soon</span>
+                  <span className="text-sm">coming soon</span>
                 </span>
               ))}
             </div>
@@ -763,10 +763,10 @@ export function Monitoring({
             {GROUPS.map((group) => (
               <div
                 key={group.label}
-                className="rounded-xl border border-border p-4"
+                className="rounded-xl border border-border p-5"
               >
                 <p className="eyebrow">{group.label}</p>
-                <div className="mt-3 flex flex-col gap-2">
+                <div className="mt-3.5 flex flex-col gap-2.5">
                   {group.signals.map((signal) => (
                     <SignalRow
                       key={signal}
@@ -786,7 +786,7 @@ export function Monitoring({
 
           <div className="mt-5 flex flex-wrap items-center gap-4 border-t border-border pt-4">
             <div>
-              <p className="text-[15px] text-ink-muted">
+              <p className="text-base text-ink-muted">
                 <span className="font-medium text-ink">
                   Collection health ·{" "}
                 </span>
@@ -815,7 +815,7 @@ export function Monitoring({
                     handle(await runCompetitorNow(selected.id)),
                   )
                 }
-                className="rounded-lg border border-border px-3.5 py-2 text-[15px] font-medium text-ink-muted transition-colors hover:border-border-strong hover:text-ink disabled:opacity-50"
+                className="rounded-xl border border-border px-4 py-2.5 text-base font-semibold text-ink-muted transition-all hover:border-border-strong hover:text-ink hover:shadow-sm disabled:opacity-50"
                 title={
                   !selected.active
                     ? "Competitor is paused"
@@ -834,7 +834,7 @@ export function Monitoring({
                     handle(await syncCompetitor(selected.id)),
                   )
                 }
-                className="rounded-lg border border-border px-3.5 py-2 text-[15px] font-medium text-ink-muted transition-colors hover:border-border-strong hover:text-ink disabled:opacity-50"
+                className="rounded-xl border border-border px-4 py-2.5 text-base font-semibold text-ink-muted transition-all hover:border-border-strong hover:text-ink hover:shadow-sm disabled:opacity-50"
                 title="Retry setting the monitoring schedule — use this only if a signal or pause change reported that the schedule failed to save"
               >
                 Re-sync schedule
@@ -851,8 +851,8 @@ export function Monitoring({
                 }
                 className={
                   selected.active
-                    ? "rounded-lg border border-border px-3.5 py-2 text-[15px] font-medium text-ink-muted transition-colors hover:border-border-strong hover:text-ink disabled:opacity-50"
-                    : "rounded-lg bg-solid px-3.5 py-2 text-[15px] font-medium text-solid-ink transition-colors hover:bg-solid-hover disabled:opacity-50"
+                    ? "rounded-xl border border-border px-4 py-2.5 text-base font-semibold text-ink-muted transition-all hover:border-border-strong hover:text-ink hover:shadow-sm disabled:opacity-50"
+                    : "rounded-xl bg-solid px-4 py-2.5 text-base font-semibold text-solid-ink transition-all hover:bg-solid-hover hover:shadow-md disabled:opacity-50"
                 }
                 title={
                   selected.active
@@ -864,7 +864,7 @@ export function Monitoring({
               </button>
               {confirmDeleteId === selected.id ? (
                 <>
-                  <span className="text-[15px] text-sev-critical">
+                  <span className="text-base text-sev-critical">
                     Delete for good?
                   </span>
                   <button
@@ -880,7 +880,7 @@ export function Monitoring({
                         }
                       })
                     }
-                    className="rounded-lg bg-sev-critical px-3.5 py-2 text-[15px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                    className="rounded-xl bg-sev-critical px-4 py-2.5 text-base font-semibold text-white transition-all hover:opacity-90 hover:shadow-md disabled:opacity-50"
                   >
                     {deleting ? "Deleting…" : "Confirm delete"}
                   </button>
@@ -888,7 +888,7 @@ export function Monitoring({
                     type="button"
                     disabled={deleting}
                     onClick={() => setConfirmDeleteId(null)}
-                    className="rounded-lg border border-border px-3.5 py-2 text-[15px] text-ink-muted hover:text-ink disabled:opacity-50"
+                    className="rounded-xl border border-border px-4 py-2.5 text-base font-medium text-ink-muted transition-all hover:border-border-strong hover:text-ink disabled:opacity-50"
                   >
                     Cancel
                   </button>
@@ -898,7 +898,7 @@ export function Monitoring({
                   type="button"
                   disabled={pending || deleting}
                   onClick={() => setConfirmDeleteId(selected.id)}
-                  className="rounded-lg border border-border px-3.5 py-2 text-[15px] font-medium text-sev-critical transition-colors hover:border-sev-critical disabled:opacity-50"
+                  className="rounded-xl border border-border px-4 py-2.5 text-base font-semibold text-sev-critical transition-all hover:border-sev-critical hover:shadow-sm disabled:opacity-50"
                   title="Stop monitoring and remove this competitor entirely — its alerts are kept"
                 >
                   Delete
