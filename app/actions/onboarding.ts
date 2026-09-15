@@ -76,10 +76,9 @@ const INTERPRETATION_SCHEMA = {
     },
     categories: {
       type: "array",
-      maxItems: 8,
       items: { type: "string" },
       description:
-        "Real product categories only — what the brand sells. Discard promotional tags, seasonal campaign names, collection labels and merchandising flags from the candidate list. Prefer the words the brand itself uses. Empty array if the input does not support any.",
+        "Real product categories only — what the brand sells. Discard promotional tags, seasonal campaign names, collection labels and merchandising flags from the candidate list. Prefer the words the brand itself uses. Empty array if the input does not support any. Limit to 8 maximum.",
     },
     audience: {
       type: "string",
@@ -389,7 +388,6 @@ const CANDIDATE_SCHEMA = {
   properties: {
     candidates: {
       type: "array",
-      maxItems: 8,
       items: {
         type: "object",
         properties: {
@@ -407,6 +405,7 @@ const CANDIDATE_SCHEMA = {
         required: ["domain", "name", "rationale"],
         additionalProperties: false,
       },
+      description: "Up to 8 competitors maximum. Do not exceed this limit.",
     },
   },
   required: ["candidates"],

@@ -48,9 +48,8 @@ const ANALYSIS_SCHEMA = {
     alternatives: {
       type: "array",
       minItems: 2,
-      maxItems: 3,
       description:
-        "Genuinely different postures, not three phrasings of one move. If one of them is 'do nothing', include it — holding is often correct and the operator deserves to see it argued rather than omitted.",
+        "Genuinely different postures, not three phrasings of one move. If one of them is 'do nothing', include it — holding is often correct and the operator deserves to see it argued rather than omitted. Provide 2–3 alternatives maximum.",
       items: {
         type: "object",
         properties: {

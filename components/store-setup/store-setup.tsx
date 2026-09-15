@@ -6,24 +6,25 @@ import {
   readStoreDraft,
   readStoreDraftFromDescription,
   saveBrandProfile,
+  suggestCompetitors,
   type BrandProfileDraft,
 } from "@/app/actions/onboarding";
 import { Panel, PanelHeading } from "@/components/page-header";
-import type { BrandProfile } from "@/lib/types/database";
+import type { BrandProfile, CompetitorSuggestion } from "@/lib/types/database";
 
 export function StoreSetup({
   profile,
   initialSuggestions,
 }: {
   profile: BrandProfile | null;
-  initialSuggestions?: Array<{ name: string; url: string }>;
+  initialSuggestions?: CompetitorSuggestion[];
 }) {
   const [mode, setMode] = useState<"url" | "description">(profile?.catalogue_source === "described" ? "description" : "url");
   const [url, setUrl] = useState(profile?.url ?? "");
   const [description, setDescription] = useState("");
   const [verified, setVerified] = useState(Boolean(profile?.url));
   const [error, setError] = useState<string | null>(null);
-  const [competitors, setCompetitors] = useState<Array<{ name: string; url: string }>>([]);
+  const [competitors, setCompetitors] = useState<CompetitorSuggestion[]>(initialSuggestions ?? []);
   const [reading, startReading] = useTransition();
   const [saving, startSaving] = useTransition();
 
@@ -51,12 +52,19 @@ export function StoreSetup({
       setError(null);
       const result = await readStoreDraftFromDescription(description);
       if (result.ok) {
-        setCompetitors([
-          { name: "Competitor 1", url: "https://example1.com" },
-          { name: "Competitor 2", url: "https://example2.com" },
-        ]);
         startSaving(async () => {
-          await saveBrandProfile(result.draft);
+          const saveResult = await saveBrandProfile(result.draft);
+          if (!saveResult.ok) {
+            setError(saveResult.error ?? "Could not save profile.");
+            return;
+          }
+          // Now discover competitors based on the saved profile
+          const suggestions = await suggestCompetitors();
+          if (suggestions.ok) {
+            setCompetitors(suggestions.suggestions ?? []);
+          } else {
+            setError(suggestions.error ?? "Could not find competitors.");
+          }
         });
       } else {
         setError(result.error);
@@ -165,7 +173,7 @@ export function StoreSetup({
         {competitors.length > 0 && (
           <Panel className="p-5">
             <PanelHeading eyebrow="Ready to monitor" title="Your competitors" />
-            <div className="mt-5 space-y-2">
+            <div className="mt-5 space-y-3">
               {competitors.map((c) => (
                 <a
                   key={c.url}
@@ -176,6 +184,9 @@ export function StoreSetup({
                 >
                   <div className="font-medium text-ink">{c.name}</div>
                   <div className="text-[13px] text-ink-muted">{c.url}</div>
+                  {c.rationale && (
+                    <div className="mt-2 text-[13px] text-ink-faint">{c.rationale}</div>
+                  )}
                 </a>
               ))}
             </div>
