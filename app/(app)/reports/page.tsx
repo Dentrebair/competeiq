@@ -27,7 +27,7 @@ export default async function ReportsPage() {
         <div className="px-8">
           <p
             role="alert"
-            className="rounded-xl border border-border bg-sev-critical-wash p-4 text-[15px] text-sev-critical"
+            className="rounded-xl border border-border bg-sev-critical-wash p-4 text-base text-sev-critical"
           >
             Could not read briefs: {error.message}
           </p>

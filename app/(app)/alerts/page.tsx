@@ -60,7 +60,7 @@ function CollectionHealth({
               ? `${active.length} monitored signal ${active.length === 1 ? "schedule is" : "schedules are"} healthy`
               : `${failing.length} of ${active.length} signal schedules are failing`}
           </p>
-          <p className="mt-0.5 text-[13px] text-ink-faint">
+          <p className="mt-0.5 text-sm text-ink-faint">
             {active.length} active {active.length === 1 ? "signal" : "signals"} across{" "}
             {competitors.length} {competitors.length === 1 ? "competitor" : "competitors"}
             {lastRun ? ` · last collection ${new Date(lastRun).toISOString().slice(11, 16)} UTC` : " · no collection recorded yet"}
@@ -83,7 +83,7 @@ function CollectionHealth({
 
       <Link
         href="/competitors"
-        className="ml-auto rounded-lg border border-border px-3.5 py-2 text-[15px] font-medium text-ink-muted
+        className="ml-auto rounded-lg border border-border px-3.5 py-2 text-base font-medium text-ink-muted
                    transition-colors hover:border-border-strong hover:text-ink"
       >
         Manage signals
@@ -136,7 +136,7 @@ export default async function AlertsPage() {
         {alertsResult.error ? (
           <p
             role="alert"
-            className="rounded-xl border border-border bg-sev-critical-wash p-4 text-[15px] text-sev-critical"
+            className="rounded-xl border border-border bg-sev-critical-wash p-4 text-base text-sev-critical"
           >
             Could not read alerts: {alertsResult.error.message}
           </p>

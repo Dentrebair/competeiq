@@ -48,7 +48,7 @@ export function DecisionOptions({
           </svg>
           Business decisions to consider
         </p>
-        <span className="tabular text-[13px] text-ink-faint">
+        <span className="tabular text-sm text-ink-faint">
           {alternatives.length} {alternatives.length === 1 ? "perspective" : "perspectives"}
         </span>
       </div>
@@ -68,10 +68,10 @@ export function DecisionOptions({
             </h4>
 
             {alternative.action ? (
-              <p className="mt-1.5 text-[15px] leading-relaxed text-ink-muted">{alternative.action}</p>
+              <p className="mt-1.5 text-base leading-relaxed text-ink-muted">{alternative.action}</p>
             ) : null}
 
-            <p className="mt-3 border-t border-border pt-3 text-[13px] leading-relaxed text-ink-muted">
+            <p className="mt-3 border-t border-border pt-3 text-sm leading-relaxed text-ink-muted">
               <span className="font-semibold text-ink">Trade-off: </span>
               {alternative.tradeoff || (
                 <span className="italic text-ink-faint">not stated for this option</span>
@@ -93,7 +93,7 @@ export function DecisionOptions({
                   ],
                 })
               }
-              className="mt-3 inline-flex items-center gap-1.5 self-start text-[15px] font-medium text-accent
+              className="mt-3 inline-flex items-center gap-1.5 self-start text-base font-medium text-accent
                          underline-offset-4 transition-colors hover:text-accent-hover hover:underline"
             >
               <svg aria-hidden viewBox="0 0 16 16" className="size-4" fill="none" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round" strokeLinejoin="round">

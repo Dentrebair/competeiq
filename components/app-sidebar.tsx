@@ -126,7 +126,7 @@ function ThemeToggle() {
     <button
       type="button"
       onClick={toggle}
-      className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-[15px] text-rail-ink-muted
+      className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-base text-rail-ink-muted
                  transition-colors hover:bg-rail-raised hover:text-rail-ink"
     >
       <span className="theme-light-only items-center gap-3">
@@ -173,7 +173,7 @@ export function AppSidebar({
       <div className="flex items-center gap-3 px-5 py-6">
         <span
           aria-hidden
-          className="grid size-9 place-items-center rounded-xl bg-brand text-[15px] font-bold tracking-tight text-brand-ink"
+          className="grid size-9 place-items-center rounded-xl bg-brand text-base font-bold tracking-tight text-brand-ink"
         >
           CI
         </span>
@@ -195,7 +195,7 @@ export function AppSidebar({
               key={item.href}
               href={item.href}
               aria-current={active ? "page" : undefined}
-              className={`relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-[15px] transition-colors ${
+              className={`relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-base transition-colors ${
                 active
                   ? "bg-rail-raised font-medium text-rail-ink"
                   : "text-rail-ink-muted hover:bg-rail-raised/60 hover:text-rail-ink"
@@ -223,7 +223,7 @@ export function AppSidebar({
       <div className="flex shrink-0 flex-col gap-1 px-3 pb-3">
         <Link
           href="/store-setup"
-          className={`flex items-center gap-3 rounded-lg px-3 py-2 text-[15px] transition-colors ${
+          className={`flex items-center gap-3 rounded-lg px-3 py-2 text-base transition-colors ${
             isActive(pathname, "/store-setup")
               ? "bg-rail-raised text-rail-ink"
               : "text-rail-ink-muted hover:bg-rail-raised hover:text-rail-ink"
@@ -235,7 +235,7 @@ export function AppSidebar({
 
         <Link
           href="/pricing"
-          className={`flex items-center gap-3 rounded-lg px-3 py-2 text-[15px] transition-colors ${
+          className={`flex items-center gap-3 rounded-lg px-3 py-2 text-base transition-colors ${
             isActive(pathname, "/pricing")
               ? "bg-rail-raised text-rail-ink"
               : "text-rail-ink-muted hover:bg-rail-raised hover:text-rail-ink"
@@ -255,7 +255,7 @@ export function AppSidebar({
             {initials}
           </span>
           <span className="flex min-w-0 flex-col leading-tight">
-            <span className="truncate text-[15px] font-medium">{email.split("@")[0]}</span>
+            <span className="truncate text-base font-medium">{email.split("@")[0]}</span>
             <span className="text-xs text-rail-ink-muted">Owner</span>
           </span>
           <form action={signOut} className="ml-auto">

@@ -97,7 +97,7 @@ function ReportModal({ digest, onClose }: { digest: Digest; onClose: () => void 
             ].map(([label, value]) => (
               <div key={label as string} className="px-4 py-3">
                 <p className="tabular text-2xl font-semibold text-ink">{value}</p>
-                <p className="mt-0.5 text-[13px] text-ink-muted">{label}</p>
+                <p className="mt-0.5 text-sm text-ink-muted">{label}</p>
               </div>
             ))}
           </div>
@@ -115,7 +115,7 @@ function ReportModal({ digest, onClose }: { digest: Digest; onClose: () => void 
               <h3 className="mt-2 text-[17px] font-semibold text-ink">
                 {digest.priority_action.action}
               </h3>
-              <p className="mt-1.5 text-[15px] leading-relaxed text-ink-muted">
+              <p className="mt-1.5 text-base leading-relaxed text-ink-muted">
                 <span className="font-medium text-ink">Why now: </span>
                 {digest.priority_action.why_now}
               </p>
@@ -132,7 +132,7 @@ function ReportModal({ digest, onClose }: { digest: Digest; onClose: () => void 
                     ],
                   })
                 }
-                className="mt-3 text-[15px] font-medium text-accent underline-offset-4 hover:underline print:hidden"
+                className="mt-3 text-base font-medium text-accent underline-offset-4 hover:underline print:hidden"
               >
                 Discuss this brief
               </button>
@@ -145,9 +145,9 @@ function ReportModal({ digest, onClose }: { digest: Digest; onClose: () => void 
               <ul className="mt-2 flex flex-col gap-3">
                 {digest.patterns.map((pattern, index) => (
                   <li key={index} className="border-l-2 border-border pl-3">
-                    <p className="text-[15px] leading-relaxed text-ink">{pattern.pattern}</p>
+                    <p className="text-base leading-relaxed text-ink">{pattern.pattern}</p>
                     {pattern.competitors_involved?.length ? (
-                      <p className="mt-0.5 text-[13px] text-ink-faint">
+                      <p className="mt-0.5 text-sm text-ink-faint">
                         {pattern.competitors_involved.join(" · ")}
                       </p>
                     ) : null}
@@ -160,14 +160,14 @@ function ReportModal({ digest, onClose }: { digest: Digest; onClose: () => void 
           {digest.alert_ids?.length ? (
             <section className="mt-6 border-t border-border pt-5">
               <p className="eyebrow">Evidence reviewed</p>
-              <p className="tabular mt-2 text-[15px] text-ink-muted">
+              <p className="tabular mt-2 text-base text-ink-muted">
                 {digest.alert_ids.length} alerts: {digest.alert_ids.map((id) => `#${id}`).join(", ")}
               </p>
             </section>
           ) : null}
 
           {digest.status === "failed" && digest.error ? (
-            <p className="mt-6 rounded-lg bg-sev-critical-wash px-3 py-2 font-mono text-[13px] text-sev-critical">
+            <p className="mt-6 rounded-lg bg-sev-critical-wash px-3 py-2 font-mono text-sm text-sev-critical">
               {digest.error}
             </p>
           ) : null}
@@ -177,14 +177,14 @@ function ReportModal({ digest, onClose }: { digest: Digest; onClose: () => void 
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg border border-border px-4 py-2 text-[15px] font-medium text-ink-muted transition-colors hover:border-border-strong hover:text-ink"
+            className="rounded-lg border border-border px-4 py-2 text-base font-medium text-ink-muted transition-colors hover:border-border-strong hover:text-ink"
           >
             Close
           </button>
           <button
             type="button"
             onClick={() => window.print()}
-            className="rounded-lg bg-solid px-4 py-2 text-[15px] font-medium text-solid-ink transition-colors hover:bg-solid-hover"
+            className="rounded-lg bg-solid px-4 py-2 text-base font-medium text-solid-ink transition-colors hover:bg-solid-hover"
           >
             Print / save PDF
           </button>
@@ -244,7 +244,7 @@ export function ReportsView({ initialDigests }: { initialDigests: Digest[] }) {
 
   return (
     <div className="flex flex-col gap-4 px-8">
-      <Panel className="p-5">
+      <Panel className="p-6">
         <PanelHeading
           eyebrow="Create report"
           title="Generate a competitive brief"
@@ -287,7 +287,7 @@ export function ReportsView({ initialDigests }: { initialDigests: Digest[] }) {
               }`}
             >
               <p className="text-base font-semibold text-ink">{card.title}</p>
-              <p className="mt-1 flex-1 text-[15px] leading-relaxed text-ink-muted">
+              <p className="mt-1 flex-1 text-base leading-relaxed text-ink-muted">
                 {card.detail}
               </p>
               {card.live ? (
@@ -295,7 +295,7 @@ export function ReportsView({ initialDigests }: { initialDigests: Digest[] }) {
                   type="button"
                   onClick={generate}
                   disabled={pending || generating}
-                  className="mt-3 rounded-lg bg-solid px-4 py-2 text-[15px] font-medium text-solid-ink
+                  className="mt-3 rounded-lg bg-solid px-4 py-2 text-base font-medium text-solid-ink
                              transition-colors hover:bg-solid-hover disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {generating ? "Writing…" : pending ? "Requesting…" : "Generate"}
@@ -310,13 +310,13 @@ export function ReportsView({ initialDigests }: { initialDigests: Digest[] }) {
         </div>
 
         {notice ? (
-          <p role="status" className="mt-4 rounded-lg bg-sev-high-wash px-3 py-2 text-[15px] text-sev-high">
+          <p role="status" className="mt-4 rounded-lg bg-sev-high-wash px-3 py-2 text-base text-sev-high">
             {notice}
           </p>
         ) : null}
 
         {generating ? (
-          <p className="mt-4 rounded-lg border border-dashed border-border-strong px-4 py-3 text-[15px] text-ink-muted">
+          <p className="mt-4 rounded-lg border border-dashed border-border-strong px-4 py-3 text-base text-ink-muted">
             A brief is being written now. It takes a few minutes and appears below on its own — no
             need to wait on this page.
           </p>
@@ -329,7 +329,7 @@ export function ReportsView({ initialDigests }: { initialDigests: Digest[] }) {
         </div>
 
         {digests.length === 0 ? (
-          <p className="border-t border-border px-5 py-10 text-[15px] text-ink-muted">
+          <p className="border-t border-border px-5 py-10 text-base text-ink-muted">
             No briefs yet. Generate one above, or open the dashboard — a briefing is produced
             automatically when the last one is stale.
           </p>
@@ -351,26 +351,26 @@ export function ReportsView({ initialDigests }: { initialDigests: Digest[] }) {
                 return (
                   <tr key={digest.id} className="border-t border-border">
                     <td className="px-5 py-3.5">
-                      <p className="text-[15px] font-medium text-ink">
+                      <p className="text-base font-medium text-ink">
                         {digest.headline ?? "Competitive brief"}
                       </p>
                       <TimeAgo
                         iso={digestTimestamp(digest)}
-                        className="text-[13px] text-ink-faint"
+                        className="text-sm text-ink-faint"
                       />
                     </td>
-                    <td className="tabular px-5 py-3.5 text-[15px] text-ink-muted">
+                    <td className="tabular px-5 py-3.5 text-base text-ink-muted">
                       {digest.period_start && digest.period_end
                         ? `${digest.period_start.slice(0, 10)} – ${digest.period_end.slice(0, 10)}`
                         : "–"}
                     </td>
-                    <td className={`px-5 py-3.5 text-[15px] font-medium ${status.className}`}>
+                    <td className={`px-5 py-3.5 text-base font-medium ${status.className}`}>
                       {status.label}
                     </td>
-                    <td className="tabular px-5 py-3.5 text-[15px] text-ink-muted">
+                    <td className="tabular px-5 py-3.5 text-base text-ink-muted">
                       {digest.alert_count ?? digest.alert_ids?.length ?? 0}
                     </td>
-                    <td className="tabular px-5 py-3.5 text-[13px] text-ink-faint">
+                    <td className="tabular px-5 py-3.5 text-sm text-ink-faint">
                       {digestTimestamp(digest).slice(0, 16).replace("T", " ")} UTC
                     </td>
                     <td className="px-5 py-3.5 text-right">
@@ -378,7 +378,7 @@ export function ReportsView({ initialDigests }: { initialDigests: Digest[] }) {
                         type="button"
                         onClick={() => setOpen(digest)}
                         disabled={digest.status === "generating"}
-                        className="text-[15px] font-medium text-accent underline-offset-4 hover:underline disabled:cursor-not-allowed disabled:text-ink-faint disabled:no-underline"
+                        className="text-base font-medium text-accent underline-offset-4 hover:underline disabled:cursor-not-allowed disabled:text-ink-faint disabled:no-underline"
                       >
                         View
                       </button>

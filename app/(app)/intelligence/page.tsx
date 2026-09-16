@@ -56,14 +56,14 @@ export default async function IntelligencePage() {
         <div className="px-8">
           <p
             role="alert"
-            className="rounded-xl border border-border bg-sev-critical-wash p-4 text-[15px] text-sev-critical"
+            className="rounded-xl border border-border bg-sev-critical-wash p-4 text-base text-sev-critical"
           >
             Could not read alerts: {alertsResult.error.message}
           </p>
         </div>
       ) : alerts.length === 0 ? (
         <div className="px-8">
-          <p className="rounded-xl border border-dashed border-border-strong p-10 text-[15px] text-ink-muted">
+          <p className="rounded-xl border border-dashed border-border-strong p-10 text-base text-ink-muted">
             No changes have been collected yet. Once monitoring runs, every detected move and the
             evidence behind it appears here.
           </p>

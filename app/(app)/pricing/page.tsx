@@ -56,7 +56,7 @@ export default async function PricingPage() {
         subtitle="What the free tier protects against, and what upgrading would remove"
       />
       <div className="flex flex-col gap-4 px-8">
-        <Panel className="p-5">
+        <Panel className="p-6">
           <PanelHeading
             eyebrow="Informational only"
             title="Free tier vs. paid tier"
@@ -64,7 +64,7 @@ export default async function PricingPage() {
           />
 
           <div className="mt-5 overflow-x-auto">
-            <table className="w-full min-w-[560px] border-collapse text-left text-[15px]">
+            <table className="w-full min-w-[560px] border-collapse text-left text-base">
               <thead>
                 <tr className="border-b border-border text-ink-muted">
                   <th className="py-2 pr-4 font-medium">Feature</th>

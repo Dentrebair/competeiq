@@ -160,7 +160,7 @@ export function ChatPanel({ target, onClose }: { target: ChatTarget; onClose: ()
         <header className="flex items-start justify-between gap-3 border-b border-border px-5 py-4">
           <div className="min-w-0">
             <p className="eyebrow">Discussing</p>
-            <p className="mt-1 truncate text-[15px] font-semibold text-ink">{target.subject}</p>
+            <p className="mt-1 truncate text-base font-semibold text-ink">{target.subject}</p>
           </div>
           <button
             type="button"
@@ -177,7 +177,7 @@ export function ChatPanel({ target, onClose }: { target: ChatTarget; onClose: ()
         <div ref={scroller} className="flex-1 space-y-4 overflow-y-auto px-5 py-5">
           {turns.length === 0 ? (
             <div className="space-y-3">
-              <p className="text-[15px] text-ink-muted">
+              <p className="text-base text-ink-muted">
                 Ask about this change and what it means for your business. The alert, your
                 catalogue and the options on screen are already in context.
               </p>
@@ -189,7 +189,7 @@ export function ChatPanel({ target, onClose }: { target: ChatTarget; onClose: ()
                       key={suggestion}
                       type="button"
                       onClick={() => void send(suggestion)}
-                      className="block w-full rounded-lg border border-dashed border-border-strong px-3 py-2 text-left text-[15px]
+                      className="block w-full rounded-lg border border-dashed border-border-strong px-3 py-2 text-left text-base
                                  text-ink-muted transition-colors hover:border-accent hover:bg-accent-wash hover:text-ink"
                     >
                       {suggestion}
@@ -205,8 +205,8 @@ export function ChatPanel({ target, onClose }: { target: ChatTarget; onClose: ()
               key={index}
               className={
                 turn.role === "user"
-                  ? "ml-auto max-w-[85%] rounded-xl rounded-br-sm bg-accent-wash px-3.5 py-2.5 text-[15px] text-ink"
-                  : "max-w-full text-[15px] leading-relaxed text-ink"
+                  ? "ml-auto max-w-[85%] rounded-xl rounded-br-sm bg-accent-wash px-3.5 py-2.5 text-base text-ink"
+                  : "max-w-full text-base leading-relaxed text-ink"
               }
             >
               {turn.content}
@@ -219,17 +219,17 @@ export function ChatPanel({ target, onClose }: { target: ChatTarget; onClose: ()
           {/* Summarised reasoning, streamed. Without it Opus 5 looks hung for
               several seconds before the first word of the answer appears. */}
           {thinking ? (
-            <p className="border-l-2 border-border pl-3 text-[13px] italic leading-relaxed text-ink-faint">
+            <p className="border-l-2 border-border pl-3 text-sm italic leading-relaxed text-ink-faint">
               {thinking}
             </p>
           ) : null}
 
           {pending && !thinking && !turns[turns.length - 1]?.content ? (
-            <p className="text-[13px] text-ink-faint">Reading the evidence…</p>
+            <p className="text-sm text-ink-faint">Reading the evidence…</p>
           ) : null}
 
           {error ? (
-            <p role="alert" className="rounded-lg bg-sev-critical-wash px-3 py-2 text-[15px] text-sev-critical">
+            <p role="alert" className="rounded-lg bg-sev-critical-wash px-3 py-2 text-base text-sev-critical">
               {error}
             </p>
           ) : null}
@@ -255,13 +255,13 @@ export function ChatPanel({ target, onClose }: { target: ChatTarget; onClose: ()
             }}
             rows={1}
             placeholder="Ask a follow-up…"
-            className="max-h-32 min-h-[40px] flex-1 resize-y rounded-lg border border-border bg-surface-sunken px-3 py-2 text-[15px]
+            className="max-h-32 min-h-[40px] flex-1 resize-y rounded-lg border border-border bg-surface-sunken px-3 py-2 text-base
                        text-ink placeholder:text-ink-faint focus:border-accent focus:outline-none"
           />
           <button
             type="submit"
             disabled={pending || !draft.trim()}
-            className="rounded-lg bg-solid px-3.5 py-2 text-[15px] font-medium text-solid-ink transition-colors
+            className="rounded-lg bg-solid px-3.5 py-2 text-base font-medium text-solid-ink transition-colors
                        hover:bg-solid-hover disabled:cursor-not-allowed disabled:opacity-40"
           >
             Send

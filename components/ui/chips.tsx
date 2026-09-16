@@ -264,7 +264,7 @@ export function BeforeAfter({
 export function Pill({ children, className = "" }: { children: ReactNode; className?: string }) {
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-full border border-border-strong px-2.5 py-0.5 text-[13px] text-ink-muted ${className}`}
+      className={`inline-flex items-center gap-1.5 rounded-full border border-border-strong px-2.5 py-0.5 text-sm text-ink-muted ${className}`}
     >
       {children}
     </span>

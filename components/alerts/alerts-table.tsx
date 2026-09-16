@@ -99,18 +99,18 @@ function ExpandedRow({
         />
       ) : (
         <div className="mt-5 flex flex-wrap items-center gap-3 rounded-xl border border-dashed border-border-strong bg-surface px-4 py-3">
-          <p className="text-[15px] text-ink-muted">No suggested decisions yet.</p>
+          <p className="text-base text-ink-muted">No suggested decisions yet.</p>
           <button
             type="button"
             onClick={generate}
             disabled={pending}
-            className="ml-auto rounded-lg bg-solid px-3 py-1.5 text-[15px] font-medium text-solid-ink
-                       transition-colors hover:bg-solid-hover disabled:cursor-not-allowed disabled:opacity-50"
+            className="ml-auto rounded-xl bg-solid px-4 py-2.5 text-base font-semibold text-solid-ink
+                       transition-all hover:bg-solid-hover hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50"
           >
             {pending ? "Weighing the options…" : "Generate options"}
           </button>
           {error ? (
-            <p role="alert" className="w-full text-[15px] text-sev-critical">
+            <p role="alert" className="w-full text-base text-sev-critical">
               {error}
             </p>
           ) : null}
@@ -121,7 +121,7 @@ function ExpandedRow({
         <button
           type="button"
           onClick={onToggleRead}
-          className="text-[15px] font-medium text-ink-muted underline-offset-4 hover:text-ink hover:underline"
+          className="text-base font-medium text-ink-muted underline-offset-4 hover:text-ink hover:underline"
         >
           {alert.is_read ? "Mark unread" : "Mark read"}
         </button>
@@ -130,7 +130,7 @@ function ExpandedRow({
             href={alert.product_url}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-[15px] font-medium text-accent underline-offset-4 hover:underline"
+            className="text-base font-medium text-accent underline-offset-4 hover:underline"
           >
             Open product
           </a>
@@ -260,12 +260,12 @@ export function AlertsTable({
               key={key}
               type="button"
               onClick={() => setTab(key)}
-              className={`relative rounded-lg px-3 py-2 text-[15px] transition-colors ${
+              className={`relative rounded-lg px-3 py-2 text-base transition-colors ${
                 tab === key ? "font-semibold text-ink" : "text-ink-muted hover:text-ink"
               }`}
             >
               {label}
-              <span className="tabular ml-2 rounded-full bg-surface-sunken px-1.5 py-0.5 text-[13px] text-ink-muted">
+              <span className="tabular ml-2 rounded-full bg-surface-sunken px-1.5 py-0.5 text-sm text-ink-muted">
                 {count}
               </span>
               {tab === key ? (
@@ -284,7 +284,7 @@ export function AlertsTable({
               <select
                 value={competitor}
                 onChange={(event) => setCompetitor(event.target.value)}
-                className="appearance-none rounded-lg border border-border bg-surface py-1.5 pl-3 pr-8 text-[15px]
+                className="appearance-none rounded-lg border border-border bg-surface py-1.5 pl-3 pr-8 text-base
                            text-ink transition-colors hover:border-border-strong focus:border-accent focus:outline-none"
               >
                 <option value="all">All competitors</option>
@@ -309,7 +309,7 @@ export function AlertsTable({
             </label>
           ) : null}
 
-          <label className="flex cursor-pointer items-center gap-2 text-[15px] text-ink-muted">
+          <label className="flex cursor-pointer items-center gap-2 text-base text-ink-muted">
             High-impact only
             <span className="relative inline-flex">
               <input
@@ -327,13 +327,13 @@ export function AlertsTable({
       </div>
 
       {error ? (
-        <p role="alert" className="border-b border-border px-5 py-3 text-[15px] text-sev-critical">
+        <p role="alert" className="border-b border-border px-5 py-3 text-base text-sev-critical">
           {error}
         </p>
       ) : null}
 
       {missedLive > 0 ? (
-        <p role="status" className="border-b border-border px-5 py-3 text-[15px] text-sev-high">
+        <p role="status" className="border-b border-border px-5 py-3 text-base text-sev-high">
           {missedLive} live {missedLive === 1 ? "update" : "updates"} arrived incomplete and could
           not be shown.{" "}
           <button
@@ -356,7 +356,7 @@ export function AlertsTable({
       </div>
 
       {visible.length === 0 ? (
-        <p className="px-5 py-10 text-[15px] text-ink-muted">
+        <p className="px-5 py-10 text-base text-ink-muted">
           {competitor !== "all"
             ? `Nothing here for ${competitor}. Switch to all competitors to see the rest.`
             : tab === "unread"
@@ -405,14 +405,14 @@ export function AlertsTable({
                     <span className="block truncate text-base font-semibold text-ink">
                       {alertTitle(alert)}
                     </span>
-                    <span className="block truncate text-[13px] text-ink-faint">
+                    <span className="block truncate text-sm text-ink-faint">
                       {alert.competitor_name}
                     </span>
                   </span>
 
-                  <SignalTag type={alert.signal_type} badge className="text-[13px]" />
+                  <SignalTag type={alert.signal_type} badge className="text-sm" />
 
-                  <TimeAgo iso={alert.created_at} className="text-[13px] text-ink-faint" />
+                  <TimeAgo iso={alert.created_at} className="text-sm text-ink-faint" />
 
                   <span
                     aria-hidden

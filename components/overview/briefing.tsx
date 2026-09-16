@@ -77,7 +77,7 @@ function Row({ row }: { row: BriefingRow }) {
           aiAvailable={alert.ai_available}
           reason={severityReason(alert)}
         />
-        <SignalTag type={alert.signal_type} badge className="text-[13px]" />
+        <SignalTag type={alert.signal_type} badge className="text-sm" />
       </div>
 
       <h3 className="mt-2.5 text-lg font-semibold leading-snug text-ink">{alertTitle(alert)}</h3>
@@ -104,7 +104,7 @@ function Row({ row }: { row: BriefingRow }) {
             type="button"
             onClick={generate}
             disabled={pending}
-            className="mt-3 w-full rounded-lg bg-solid px-3 py-2 text-[15px] font-medium text-solid-ink
+            className="mt-3 w-full rounded-lg bg-solid px-3 py-2 text-base font-medium text-solid-ink
                        transition-colors hover:bg-solid-hover disabled:cursor-not-allowed disabled:opacity-50"
           >
             {pending
@@ -115,7 +115,7 @@ function Row({ row }: { row: BriefingRow }) {
           </button>
 
           {error ? (
-            <p role="alert" className="mt-2 text-[13px] text-sev-critical">
+            <p role="alert" className="mt-2 text-sm text-sev-critical">
               {error}
             </p>
           ) : null}
@@ -158,7 +158,7 @@ export function DailyBriefing({
           }
           title="What changed and the options worth considering"
           aside={
-            <span className="tabular text-[13px] text-ink-faint">
+            <span className="tabular text-sm text-ink-faint">
               {rows.length} priority {rows.length === 1 ? "alert" : "alerts"}
               {perspectives > 0 ? ` · ${perspectives} perspectives` : ""}
             </span>
@@ -167,7 +167,7 @@ export function DailyBriefing({
       </div>
 
       {rows.length === 0 ? (
-        <p className="border-t border-border px-5 py-8 text-[15px] text-ink-muted">
+        <p className="border-t border-border px-5 py-8 text-base text-ink-muted">
           Nothing needs a decision right now. New changes appear here as they are detected.
         </p>
       ) : (

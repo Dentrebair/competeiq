@@ -23,12 +23,12 @@ export function PageHeader({
     <header className="flex flex-wrap items-start justify-between gap-4 px-8 pb-6 pt-8">
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-3">
-          <h1 className="text-[30px] font-semibold leading-none tracking-tight text-ink">
+          <h1 className="text-[34px] font-bold leading-none tracking-tight text-ink">
             {title}
           </h1>
           {status}
         </div>
-        <p className="mt-2 text-[15px] text-ink-muted">{subtitle}</p>
+        <p className="mt-2.5 text-base text-ink-muted">{subtitle}</p>
       </div>
       {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
     </header>

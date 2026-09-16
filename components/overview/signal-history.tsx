@@ -169,13 +169,13 @@ export function SignalHistory({
   const compact = period !== "weekly";
 
   return (
-    <Panel className="p-5">
+    <Panel className="p-6">
       <PanelHeading
         eyebrow="Competitive signal history"
         title="Signal movement by severity"
         description="The most severe change recorded for each signal, day by day."
         aside={
-          <span className="tabular text-[13px] text-ink-faint">
+          <span className="tabular text-sm text-ink-faint">
             {activeCount} of {chartedSignals.length} reporting
           </span>
         }
@@ -191,7 +191,7 @@ export function SignalHistory({
                 setPeriod(key);
                 setOffset(0);
               }}
-              className={`rounded-md px-3 py-1.5 text-[15px] transition-colors ${
+              className={`rounded-md px-3 py-1.5 text-base transition-colors ${
                 period === key
                   ? "bg-surface font-medium text-ink shadow-[var(--shadow-card)]"
                   : "text-ink-muted hover:text-ink"
@@ -213,7 +213,7 @@ export function SignalHistory({
               <path d="M10 3.5 5.5 8l4.5 4.5" />
             </svg>
           </button>
-          <span className="tabular min-w-[168px] text-center text-[15px] font-medium text-ink">
+          <span className="tabular min-w-[168px] text-center text-base font-medium text-ink">
             {rangeLabel}
           </span>
           <button
@@ -273,7 +273,7 @@ export function SignalHistory({
                 return (
                   <tr key={signal}>
                     <td className="hatched rounded-l-md px-2 py-2.5 align-middle">
-                      <span className="text-[15px] font-medium text-ink-muted">
+                      <span className="text-base font-medium text-ink-muted">
                         {SIGNAL_TYPE_LABELS[signal]}
                       </span>
                       <span className="block text-xs text-ink-faint">{detail}</span>
@@ -284,7 +284,7 @@ export function SignalHistory({
                       claim this signal was checked and found calm.
                     */}
                     <td colSpan={days.length + 1} className="hatched rounded-r-md px-3">
-                      <span className="text-[13px] text-ink-faint">{explanation}</span>
+                      <span className="text-sm text-ink-faint">{explanation}</span>
                     </td>
                   </tr>
                 );
@@ -293,7 +293,7 @@ export function SignalHistory({
               return (
                 <tr key={signal}>
                   <td className="px-2 py-1.5 align-middle">
-                    <span className="text-[15px] font-medium text-ink">
+                    <span className="text-base font-medium text-ink">
                       {SIGNAL_TYPE_LABELS[signal]}
                     </span>
                     {cadence ? (
@@ -313,7 +313,7 @@ export function SignalHistory({
                                   cell.count === 1 ? "change" : "changes"
                                 } · most severe: ${style.label}`
                           }
-                          className={`tabular grid place-items-center rounded-md text-[13px] font-semibold ${
+                          className={`tabular grid place-items-center rounded-md text-sm font-semibold ${
                             compact ? "h-6" : "h-11"
                           } ${style.className}`}
                         >
@@ -342,11 +342,11 @@ export function SignalHistory({
                         0,
                       );
                       if (total === 0) {
-                        return <span className="text-[13px] text-ink-faint">–</span>;
+                        return <span className="text-sm text-ink-faint">–</span>;
                       }
                       return (
                         <span
-                          className="tabular text-[15px] font-semibold text-ink"
+                          className="tabular text-base font-semibold text-ink"
                           title={
                             compact
                               ? `${total} changes over ${days.length} days`
@@ -365,7 +365,7 @@ export function SignalHistory({
         </table>
       </div>
 
-      <div className="mt-4 flex flex-wrap items-center gap-4 border-t border-border pt-3 text-[13px] text-ink-muted">
+      <div className="mt-4 flex flex-wrap items-center gap-4 border-t border-border pt-3 text-sm text-ink-muted">
         <span className="inline-flex items-center gap-1.5">
           <span aria-hidden className="size-3 rounded bg-cell-low" /> Low
         </span>

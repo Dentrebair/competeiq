@@ -67,7 +67,7 @@ export default async function OverviewPage() {
         <PageHeader title="Overview" subtitle="What changed, what matters, and what to consider next" />
         <p
           role="alert"
-          className="rounded-xl border border-border bg-sev-critical-wash p-4 text-[15px] text-sev-critical"
+          className="rounded-xl border border-border bg-sev-critical-wash p-4 text-base text-sev-critical"
         >
           Could not read alerts: {alertsResult.error.message}
           <span className="mt-1 block text-ink-muted">

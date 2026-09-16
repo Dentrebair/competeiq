@@ -86,7 +86,7 @@ export default async function CompetitorsPage() {
         <div className="px-8">
           <p
             role="alert"
-            className="rounded-xl border border-border bg-sev-critical-wash p-4 text-[15px] text-sev-critical"
+            className="rounded-xl border border-border bg-sev-critical-wash p-4 text-base text-sev-critical"
           >
             Could not load competitors: {error.message}
           </p>

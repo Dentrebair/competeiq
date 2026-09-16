@@ -29,19 +29,19 @@ export function WhoMoved({
   monitoredCount: number;
 }) {
   return (
-    <Panel className="p-5">
+    <Panel className="p-6">
       <PanelHeading
         eyebrow="Latest competitor changes"
         title="Who moved today"
         aside={
-          <span className="tabular text-[13px] text-ink-faint">
+          <span className="tabular text-sm text-ink-faint">
             {monitoredCount} {monitoredCount === 1 ? "competitor" : "competitors"} monitored
           </span>
         }
       />
 
       {latest.length === 0 ? (
-        <p className="mt-5 text-[15px] text-ink-muted">
+        <p className="mt-5 text-base text-ink-muted">
           No competitors are being monitored yet. Add one to start collecting changes.
         </p>
       ) : (
@@ -75,7 +75,7 @@ export function WhoMoved({
                     {competitorName}
                   </span>
                   {alert ? (
-                    <span className="flex flex-wrap items-center gap-x-2 text-[13px] text-ink-faint">
+                    <span className="flex flex-wrap items-center gap-x-2 text-sm text-ink-faint">
                       <span className="tabular">
                         {changeCount} {changeCount === 1 ? "change" : "changes"}
                       </span>
@@ -83,7 +83,7 @@ export function WhoMoved({
                       <TimeAgo iso={alert.created_at} />
                     </span>
                   ) : (
-                    <span className="text-[13px] text-ink-faint">No changes recorded</span>
+                    <span className="text-sm text-ink-faint">No changes recorded</span>
                   )}
                 </span>
               </div>
@@ -101,7 +101,7 @@ export function WhoMoved({
                   </p>
                 </div>
               ) : (
-                <p className="mt-3 border-t border-border pt-3 text-[15px] text-ink-faint">
+                <p className="mt-3 border-t border-border pt-3 text-base text-ink-faint">
                   Quiet since monitoring began. That is worth knowing too.
                 </p>
               )}

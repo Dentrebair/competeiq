@@ -137,7 +137,7 @@ export function EvidenceBody({
       {hasFigures ? <EvidenceLine alert={alert} size={size} /> : null}
       <SentenceList text={alert.summary} tone="text-ink-muted" />
       {!hasFigures ? (
-        <p className="text-[13px] text-ink-faint">
+        <p className="text-sm text-ink-faint">
           No before and after value is recorded for this signal type, so the description above is
           the full evidence.
         </p>
@@ -176,7 +176,7 @@ export function EvidenceLine({ alert, size = "base" }: { alert: Alert; size?: "b
         </span>
       ) : null}
       {alert.product_title && alert.signal_type !== "catalog_change" ? (
-        <span className={`font-medium text-ink-muted ${size === "lg" ? "text-base" : "text-[15px]"}`}>
+        <span className={`font-medium text-ink-muted ${size === "lg" ? "text-base" : "text-base"}`}>
           {alert.product_title}
         </span>
       ) : null}
@@ -204,7 +204,7 @@ export function WhyItMatters({ alert, className = "" }: { alert: Alert; classNam
 
   return (
     <InsightBlock label="Why it matters" className={className}>
-      <p className="text-[15px] leading-relaxed text-ink-faint">
+      <p className="text-base leading-relaxed text-ink-faint">
         {alert.ai_available
           ? "Not yet read against your own catalogue. Generate decision options below to do that."
           : "Automated interpretation failed for this signal, so it has no severity or impact reading. The evidence above is unaffected."}
@@ -223,7 +223,7 @@ export function WhyItMatters({ alert, className = "" }: { alert: Alert; classNam
 export function RiskLine({ alert, reason }: { alert: Alert; reason: string | null }) {
   if (!alert.ai_available) {
     return (
-      <p className="text-[15px] text-ink-faint">
+      <p className="text-base text-ink-faint">
         Not assessed. The interpretation for this signal did not complete.
       </p>
     );

@@ -65,7 +65,7 @@ function Select({
       <select
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="appearance-none rounded-lg border border-border bg-surface py-2 pl-3 pr-8 text-[15px] text-ink
+        className="appearance-none rounded-lg border border-border bg-surface py-2 pl-3 pr-8 text-base text-ink
                    transition-colors hover:border-border-strong focus:border-accent focus:outline-none"
       >
         {options.map((option) => (
@@ -101,13 +101,13 @@ function Evidence({ alert }: { alert: Alert }) {
           <h2 className="mt-1 text-2xl font-semibold leading-tight tracking-tight text-ink">
             {alertTitle(alert)}
           </h2>
-          <div className="mt-2.5 flex flex-wrap items-center gap-2 text-[13px] text-ink-faint">
+          <div className="mt-2.5 flex flex-wrap items-center gap-2 text-sm text-ink-faint">
             <SeverityChip
               severity={alert.severity}
               aiAvailable={alert.ai_available}
               reason={severityReason(alert)}
             />
-            <SignalTag type={alert.signal_type} badge className="text-[13px]" />
+            <SignalTag type={alert.signal_type} badge className="text-sm" />
             <span>
               Detected <TimeAgo iso={alert.created_at} />
             </span>
@@ -131,7 +131,7 @@ function Evidence({ alert }: { alert: Alert }) {
           "Source verified" tick, which would imply a check nobody performs;
           naming the workflow and run is true and just as reassuring.
         */}
-        <p className="tabular flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-border pt-3 text-[13px] text-ink-faint">
+        <p className="tabular flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-border pt-3 text-sm text-ink-faint">
           <svg aria-hidden viewBox="0 0 16 16" className="size-3.5 shrink-0 text-sev-low" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
             <path d="m3 8.5 3.2 3L13 5" />
           </svg>
@@ -180,13 +180,13 @@ function Interpretation({
           {/* Rendered only when a confidence was actually recorded. Absence is
               not "medium confidence" — it is no assessment at all. */}
           {confidence ? (
-            <span className="rounded-full border border-border px-2.5 py-0.5 text-[13px] capitalize text-ink-muted">
+            <span className="rounded-full border border-border px-2.5 py-0.5 text-sm capitalize text-ink-muted">
               {confidence} confidence
             </span>
           ) : null}
         </div>
 
-        <p className="mt-2 text-[13px] italic leading-relaxed text-ink-faint">
+        <p className="mt-2 text-sm italic leading-relaxed text-ink-faint">
           Written by AI from the collected signals — read it as a starting point, not a finding.
           The evidence beside it is what was actually observed.
         </p>
@@ -212,7 +212,7 @@ function Interpretation({
                   ],
                 })
               }
-              className="inline-flex items-center gap-1.5 text-[15px] font-medium text-accent underline-offset-4 hover:underline"
+              className="inline-flex items-center gap-1.5 text-base font-medium text-accent underline-offset-4 hover:underline"
             >
               <svg aria-hidden viewBox="0 0 16 16" className="size-4" fill="none" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M14 9.4a2 2 0 0 1-2 2H6l-3.2 2.4V4.6a2 2 0 0 1 2-2h7.2a2 2 0 0 1 2 2Z" />
@@ -273,7 +273,7 @@ function Interpretation({
                       suggestions: [question],
                     })
                   }
-                  className="rounded-lg border border-dashed border-border-strong px-3 py-2 text-left text-[15px]
+                  className="rounded-lg border border-dashed border-border-strong px-3 py-2 text-left text-base
                              text-ink-muted transition-colors hover:border-accent hover:bg-accent-wash hover:text-ink"
                 >
                   {question}
@@ -287,7 +287,7 @@ function Interpretation({
       {analysis?.deeper_impact ? (
         <div className="rounded-xl border border-border bg-surface p-5 shadow-[var(--shadow-card)]">
           <p className="eyebrow">Deeper reading</p>
-          <p className="mt-2 text-[15px] leading-relaxed text-ink">{analysis.deeper_impact}</p>
+          <p className="mt-2 text-base leading-relaxed text-ink">{analysis.deeper_impact}</p>
         </div>
       ) : null}
 
@@ -301,7 +301,7 @@ function Interpretation({
       ) : (
         <div className="rounded-xl border border-dashed border-border-strong bg-surface p-5">
           <p className="eyebrow">Need another perspective?</p>
-          <p className="mt-2 text-[15px] text-ink-muted">
+          <p className="mt-2 text-base text-ink-muted">
             Generate alternative approaches and compare what each one costs you.
           </p>
           <button
@@ -309,7 +309,7 @@ function Interpretation({
             onClick={generate}
             disabled={pending}
             className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-solid px-4 py-2.5
-                       text-[15px] font-medium text-solid-ink transition-colors hover:bg-solid-hover
+                       text-base font-medium text-solid-ink transition-colors hover:bg-solid-hover
                        disabled:cursor-not-allowed disabled:opacity-50"
           >
             {pending ? "Weighing the options…" : "Go deeper"}
@@ -318,7 +318,7 @@ function Interpretation({
             </svg>
           </button>
           {error ? (
-            <p role="alert" className="mt-2 text-[15px] text-sev-critical">
+            <p role="alert" className="mt-2 text-base text-sev-critical">
               {error}
             </p>
           ) : null}
@@ -411,7 +411,7 @@ export function IntelligenceView({
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search competitor or change"
-            className="w-full rounded-lg border border-border bg-surface py-2 pl-9 pr-3 text-[15px] text-ink
+            className="w-full rounded-lg border border-border bg-surface py-2 pl-9 pr-3 text-base text-ink
                        placeholder:text-ink-faint focus:border-accent focus:outline-none"
           />
         </label>
@@ -469,13 +469,13 @@ export function IntelligenceView({
         <div className="rounded-xl border border-border bg-surface shadow-[var(--shadow-card)]">
           <div className="flex items-center justify-between border-b border-border px-4 py-3">
             <p className="eyebrow">Signal timeline</p>
-            <span className="tabular text-[13px] text-ink-faint">
+            <span className="tabular text-sm text-ink-faint">
               {filtered.length} {filtered.length === 1 ? "change" : "changes"}
             </span>
           </div>
 
           {groups.length === 0 ? (
-            <p className="px-4 py-8 text-[15px] text-ink-muted">
+            <p className="px-4 py-8 text-base text-ink-muted">
               Nothing matches these filters. Widen the range or clear the search.
             </p>
           ) : (
@@ -516,7 +516,7 @@ export function IntelligenceView({
                           />
                           <TimeAgo iso={alert.created_at} className="text-xs text-ink-faint" />
                         </div>
-                        <p className="mt-1 truncate text-[13px] text-ink-faint">
+                        <p className="mt-1 truncate text-sm text-ink-faint">
                           {alert.competitor_name} · {signalTypeLabel(alert.signal_type)}
                           {alertMovement(alert) ? ` · ${alertMovement(alert)}` : ""}
                         </p>
@@ -542,7 +542,7 @@ export function IntelligenceView({
           </>
         ) : (
           <div className="rounded-xl border border-dashed border-border-strong p-10 lg:col-span-2">
-            <p className="text-[15px] text-ink-muted">
+            <p className="text-base text-ink-muted">
               Select a change on the left to see its evidence and what it might mean.
             </p>
           </div>

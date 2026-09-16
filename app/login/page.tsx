@@ -14,17 +14,17 @@ export default async function LoginPage(props: PageProps<"/login">) {
     <main className="flex min-h-dvh items-center justify-center px-6 py-12">
       <div className="w-full max-w-sm">
         <div className="mb-8">
-          <h1 className="text-2xl font-semibold tracking-tight text-ink">CompeteIQ</h1>
-          <p className="mt-1 text-[15px] text-ink-muted">
+          <h1 className="text-3xl font-bold tracking-tight text-ink">CompeteIQ</h1>
+          <p className="mt-2 text-base text-ink-muted">
             Competitor intelligence. Sign in to see today&rsquo;s signals.
           </p>
         </div>
 
-        <div className="rounded-lg border border-border bg-surface p-6">
+        <div className="rounded-2xl border border-border bg-surface p-7 shadow-sm">
           <LoginForm next={next} />
         </div>
 
-        <p className="mt-6 text-[13px] text-ink-faint">
+        <p className="mt-6 text-sm text-ink-faint">
           Access is provisioned by your administrator. There is no self-signup.
         </p>
       </div>

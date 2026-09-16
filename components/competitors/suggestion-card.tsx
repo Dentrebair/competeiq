@@ -45,7 +45,7 @@ export function SuggestionCard({
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-base font-semibold text-ink">{suggestion.name}</p>
-          <p className="truncate text-[13px] text-ink-faint">{suggestion.domain}</p>
+          <p className="truncate text-sm text-ink-faint">{suggestion.domain}</p>
         </div>
         <span className="shrink-0 rounded-full bg-sev-low-wash px-2 py-0.5 text-xs font-medium text-sev-low">
           Verified
@@ -53,10 +53,10 @@ export function SuggestionCard({
       </div>
 
       {/* The evidence line is what makes a wrong suggestion cheap to reject. */}
-      {bits.length ? <p className="mt-2 text-[13px] text-ink-muted">{bits.join(" · ")}</p> : null}
+      {bits.length ? <p className="mt-2 text-sm text-ink-muted">{bits.join(" · ")}</p> : null}
 
       {suggestion.rationale ? (
-        <p className="mt-2 text-[15px] leading-relaxed text-ink-muted">{suggestion.rationale}</p>
+        <p className="mt-2 text-base leading-relaxed text-ink-muted">{suggestion.rationale}</p>
       ) : null}
 
       <div className="mt-3 flex items-center gap-3">
@@ -70,7 +70,7 @@ export function SuggestionCard({
               else setError(result.error ?? "Could not add that competitor.");
             })
           }
-          className="rounded-lg bg-solid px-3 py-1.5 text-[15px] font-medium text-solid-ink transition-colors hover:bg-solid-hover disabled:opacity-50"
+          className="rounded-lg bg-solid px-3 py-1.5 text-base font-medium text-solid-ink transition-colors hover:bg-solid-hover disabled:opacity-50"
         >
           {pending ? "Adding…" : "Monitor this"}
         </button>
@@ -83,14 +83,14 @@ export function SuggestionCard({
               onResolved(suggestion.id);
             })
           }
-          className="text-[15px] text-ink-muted underline-offset-4 hover:text-ink hover:underline disabled:opacity-50"
+          className="text-base text-ink-muted underline-offset-4 hover:text-ink hover:underline disabled:opacity-50"
         >
           Not a competitor
         </button>
       </div>
 
       {error ? (
-        <p role="alert" className="mt-2 text-[15px] text-sev-critical">
+        <p role="alert" className="mt-2 text-base text-sev-critical">
           {error}
         </p>
       ) : null}

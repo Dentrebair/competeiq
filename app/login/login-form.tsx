@@ -14,7 +14,7 @@ export function LoginForm({ next }: { next: string }) {
       <input type="hidden" name="next" value={next} />
 
       <div className="flex flex-col gap-2">
-        <label htmlFor="email" className="text-[15px] font-medium text-ink">
+        <label htmlFor="email" className="text-base font-medium text-ink">
           Email
         </label>
         <input
@@ -23,14 +23,14 @@ export function LoginForm({ next }: { next: string }) {
           type="email"
           autoComplete="username"
           required
-          className="rounded-md border border-border bg-surface px-3 py-2 text-ink
-                     placeholder:text-ink-faint focus:border-accent focus:outline-none"
+          className="rounded-xl border border-border bg-surface px-4 py-3 text-base text-ink
+                     placeholder:text-ink-faint focus:border-accent focus:outline-2 focus:outline-offset-0 focus:outline-accent"
           placeholder="you@yourbrand.com"
         />
       </div>
 
       <div className="flex flex-col gap-2">
-        <label htmlFor="password" className="text-[15px] font-medium text-ink">
+        <label htmlFor="password" className="text-base font-medium text-ink">
           Password
         </label>
         <input
@@ -39,14 +39,14 @@ export function LoginForm({ next }: { next: string }) {
           type="password"
           autoComplete="current-password"
           required
-          className="rounded-md border border-border bg-surface px-3 py-2 text-ink
-                     focus:border-accent focus:outline-none"
+          className="rounded-xl border border-border bg-surface px-4 py-3 text-base text-ink
+                     focus:border-accent focus:outline-2 focus:outline-offset-0 focus:outline-accent"
         />
       </div>
 
       {state.error ? (
         // aria-live so the failure is announced, not just repainted.
-        <p role="alert" aria-live="polite" className="text-[15px] text-sev-critical">
+        <p role="alert" aria-live="polite" className="text-base text-sev-critical">
           {state.error}
         </p>
       ) : null}
@@ -54,8 +54,8 @@ export function LoginForm({ next }: { next: string }) {
       <button
         type="submit"
         disabled={isPending}
-        className="mt-1 rounded-md bg-accent px-4 py-2 font-medium text-accent-contrast
-                   transition-colors hover:bg-accent-hover disabled:opacity-60"
+        className="mt-1 rounded-xl bg-accent px-4 py-3 text-base font-semibold text-accent-contrast
+                   transition-all hover:bg-accent-hover hover:shadow-md disabled:opacity-60"
       >
         {isPending ? "Signing in…" : "Sign in"}
       </button>
