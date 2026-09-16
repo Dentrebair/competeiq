@@ -7,7 +7,6 @@ import {
   addCompetitor,
   deleteCompetitor,
   setCompetitorActive,
-  syncCompetitor,
   updateSignalConfig,
   runCompetitorNow,
   type CompetitorActionState,
@@ -89,12 +88,54 @@ function Toggle({
   );
 }
 
+function RunIcon({ className = "size-3.5" }: { className?: string }) {
+  return (
+    <svg aria-hidden viewBox="0 0 16 16" className={className} fill="currentColor">
+      <path d="M4 2.8v10.4a.8.8 0 0 0 1.2.7l8.4-5.2a.8.8 0 0 0 0-1.4L5.2 2.1A.8.8 0 0 0 4 2.8Z" />
+    </svg>
+  );
+}
+
+function PauseIcon({ className = "size-3.5" }: { className?: string }) {
+  return (
+    <svg aria-hidden viewBox="0 0 16 16" className={className} fill="currentColor">
+      <rect x="3.3" y="2.5" width="3.2" height="11" rx="1" />
+      <rect x="9.5" y="2.5" width="3.2" height="11" rx="1" />
+    </svg>
+  );
+}
+
+function TrashIcon({ className = "size-3.5" }: { className?: string }) {
+  return (
+    <svg
+      aria-hidden
+      viewBox="0 0 16 16"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M2.5 4.5h11M6 4.5V3a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v1.5M6.5 7.5v4M9.5 7.5v4M3.5 4.5l.6 8.2a1 1 0 0 0 1 .9h5.8a1 1 0 0 0 1-.9l.6-8.2" />
+    </svg>
+  );
+}
+
 /** Same caution as isRenderableAlert in alerts-table.tsx: Realtime can deliver a partial row. */
 function isRenderableScrapeRun(row: unknown): row is ScrapeRun {
   if (!row || typeof row !== "object") return false;
   const candidate = row as Partial<ScrapeRun>;
   return (
     typeof candidate.run_id === "string" && typeof candidate.status === "string"
+  );
+}
+
+function isRenderableSignalConfig(row: unknown): row is SignalConfig {
+  if (!row || typeof row !== "object") return false;
+  const candidate = row as Partial<SignalConfig>;
+  return (
+    typeof candidate.signal_type === "string" && typeof candidate.competitor_id === "string"
   );
 }
 
@@ -106,20 +147,6 @@ const ACTIVE_RUN_STATUSES = new Set<ScrapeRun["status"]>([
 /** Whether a run is still in flight — used to disable Run Now and drive the spinner. */
 function isRunActive(run: ScrapeRun | null): boolean {
   return run !== null && ACTIVE_RUN_STATUSES.has(run.status);
-}
-
-function runStatusText(run: ScrapeRun | null): string {
-  if (!run) return "Never run";
-  switch (run.status) {
-    case "running":
-      return "Starting the scrape…";
-    case "processing":
-      return "Processing results…";
-    case "succeeded":
-      return "Completed";
-    case "failed":
-      return "Failed";
-  }
 }
 
 /**
@@ -160,15 +187,15 @@ function RunProgress({
   // correctly resets the Realtime subscription below.
   const [run, setRun] = useState<ScrapeRun | null>(initial);
 
-  // Per-instance, not just per-competitor: this component now renders twice
-  // for the same competitor at once (its card in the grid, and the detail
-  // panel when it's selected). Supabase's client keys channels by name, so
-  // two instances sharing `scrape-runs-${competitorId}` collide — the second
-  // `.on()` call throws "cannot add postgres_changes callbacks ... after
-  // subscribe()" against the first instance's already-subscribed channel,
-  // an uncaught error that took the whole page down. Each instance getting
-  // its own unique channel name fixes that; both still filter on the same
-  // competitor_id and so both still receive every update.
+  // Per-instance, not just per-competitor: this component can render more
+  // than once for the same competitor at once. Supabase's client keys
+  // channels by name, so two instances sharing `scrape-runs-${competitorId}`
+  // collide — the second `.on()` call throws "cannot add postgres_changes
+  // callbacks ... after subscribe()" against the first instance's
+  // already-subscribed channel, an uncaught error that took the whole page
+  // down. Each instance getting its own unique channel name fixes that; both
+  // still filter on the same competitor_id and so both still receive every
+  // update.
   const instanceId = useId();
 
   useEffect(() => {
@@ -269,23 +296,90 @@ function RunProgress({
           {percent}%
         </span>
       </div>
-      <span
-        className={`text-sm ${failed ? "font-semibold text-sev-critical" : "text-ink-faint"}`}
-        title={run.error ?? undefined}
-      >
-        {failed ? "Failed" : runStatusText(run)}
-        {failed && run.error ? (
-          <span className="ml-1 max-w-48 truncate align-bottom">— {run.error}</span>
-        ) : null}
-        {!active ? (
-          <>
-            {" · "}
-            <TimeAgo iso={run.updated_at} />
-          </>
-        ) : null}
-      </span>
+      {/* No text while a run is in flight — the bar carries that on its own.
+          Only a finished run (succeeded/failed) gets a word next to it. */}
+      {!active ? (
+        <span
+          className={`text-sm ${failed ? "font-semibold text-sev-critical" : "text-ink-faint"}`}
+          title={run.error ?? undefined}
+        >
+          {failed ? "Failed" : "Completed"}
+          {failed && run.error ? (
+            <span className="ml-1 max-w-48 truncate align-bottom">— {run.error}</span>
+          ) : null}
+          {" · "}
+          <TimeAgo iso={run.updated_at} />
+        </span>
+      ) : null}
     </div>
   );
+}
+
+/**
+ * Live signal_configs for one competitor — same Realtime pattern as
+ * RunProgress (supabase/15 adds this table to the publication). Without it,
+ * "N signals tracked" only updated after a full Next.js revalidate: toggling
+ * a signal in "Manage monitoring" left every other rendering of that count
+ * stale until something forced the page to re-fetch.
+ *
+ * Unlike RunProgress, this DOES resync from `initial` on a competitorId
+ * change — it's used both from a component keyed per-competitor (where a
+ * remount already handles this) and from the page-level signals panel, which
+ * stays mounted across competitor selection and would otherwise keep
+ * showing the previously-selected competitor's configs until a Realtime
+ * event happened to arrive for the new one.
+ */
+function useLiveSignalConfigs(competitorId: string, initial: SignalConfig[]): SignalConfig[] {
+  const [configs, setConfigs] = useState<SignalConfig[]>(initial);
+  // React's documented pattern for "reset derived state when an id changes"
+  // without an effect: compare during render and adjust synchronously. Doing
+  // this in an effect instead would fire one render late and, per the
+  // react-hooks lint rule, risks cascading renders.
+  const [trackedId, setTrackedId] = useState(competitorId);
+  if (competitorId !== trackedId) {
+    setTrackedId(competitorId);
+    setConfigs(initial);
+  }
+  const instanceId = useId();
+
+  useEffect(() => {
+    const supabase = createClient();
+    const channel = supabase
+      .channel(`signal-configs-${competitorId}-${instanceId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "signal_configs",
+          filter: `competitor_id=eq.${competitorId}`,
+        },
+        (payload) => {
+          if (payload.eventType === "DELETE") {
+            const old = payload.old as Partial<SignalConfig>;
+            if (!old.signal_type) return;
+            setConfigs((prev) => prev.filter((c) => c.signal_type !== old.signal_type));
+            return;
+          }
+          if (!isRenderableSignalConfig(payload.new)) return;
+          const row = payload.new;
+          setConfigs((prev) => {
+            const idx = prev.findIndex((c) => c.signal_type === row.signal_type);
+            if (idx === -1) return [...prev, row];
+            const next = [...prev];
+            next[idx] = row;
+            return next;
+          });
+        },
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [competitorId, instanceId]);
+
+  return configs;
 }
 
 function SignalRow({
@@ -551,6 +645,224 @@ function AddCompetitor({
   );
 }
 
+/** One card in the portfolio grid. Its own component so useLiveSignalConfigs — a hook — can be called per-competitor without breaking the Rules of Hooks inside a .map(). */
+function CompetitorCard({
+  competitor,
+  selected,
+  onSelect,
+  onToggleActive,
+  onRunNow,
+  onDelete,
+  togglingId,
+  runningId,
+}: {
+  competitor: CompetitorRow;
+  selected: boolean;
+  onSelect: () => void;
+  onToggleActive: () => void;
+  onRunNow: () => void;
+  onDelete: () => void;
+  togglingId: string | null;
+  runningId: string | null;
+}) {
+  const configs = useLiveSignalConfigs(competitor.id, competitor.configs);
+  const enabledCount = configs.filter((c) => c.enabled && isSignalLive(c.signal_type)).length;
+  const failing = configs.some((c) => c.enabled && c.last_error);
+  const scrapeActive = isRunActive(competitor.latestRun);
+  const runPending = runningId === competitor.id || scrapeActive;
+  const togglePending = togglingId === competitor.id;
+
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onSelect}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onSelect();
+        }
+      }}
+      className={`cursor-pointer rounded-2xl border p-5 text-left shadow-sm transition-all hover:shadow-md ${
+        selected
+          ? "border-accent bg-accent-wash/40 shadow-md"
+          : "border-border bg-surface hover:border-border-strong"
+      }`}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <span
+          aria-hidden
+          className="grid size-12 shrink-0 place-items-center rounded-full border border-border bg-surface-sunken text-base font-semibold text-ink-muted"
+        >
+          {competitor.name.slice(0, 2).toUpperCase()}
+        </span>
+
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            disabled={runPending || !competitor.active}
+            onClick={(event) => {
+              event.stopPropagation();
+              onRunNow();
+            }}
+            title={
+              !competitor.active
+                ? "Competitor is paused"
+                : scrapeActive
+                  ? "A run is already in progress"
+                  : "Run a scrape now"
+            }
+            className="grid size-9 place-items-center rounded-full border border-border text-ink-muted transition-all hover:border-border-strong hover:text-ink disabled:opacity-40"
+          >
+            {runPending ? (
+              <span
+                aria-hidden
+                className="size-3.5 animate-spin rounded-full border-[1.5px] border-current border-t-transparent"
+              />
+            ) : (
+              <RunIcon />
+            )}
+            <span className="sr-only">Run now</span>
+          </button>
+
+          <button
+            type="button"
+            disabled={togglePending}
+            onClick={(event) => {
+              event.stopPropagation();
+              onToggleActive();
+            }}
+            title={competitor.active ? "Pause monitoring" : "Resume monitoring"}
+            className={`grid size-9 place-items-center rounded-full border transition-all hover:scale-105 disabled:opacity-40 ${
+              competitor.active
+                ? "border-transparent bg-sev-low-wash text-sev-low"
+                : "border-transparent bg-sev-critical-wash text-sev-critical"
+            }`}
+          >
+            <PauseIcon />
+            <span className="sr-only">
+              {competitor.active ? "Pause monitoring" : "Resume monitoring"}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              onDelete();
+            }}
+            title="Delete competitor"
+            className="grid size-9 place-items-center rounded-full border border-border text-ink-muted transition-all hover:border-sev-critical hover:text-sev-critical"
+          >
+            <TrashIcon />
+            <span className="sr-only">Delete competitor</span>
+          </button>
+        </div>
+      </div>
+
+      <p className="mt-4 text-lg font-semibold text-ink">{competitor.name}</p>
+      <p className="truncate text-sm text-ink-faint">{competitor.domain}</p>
+      <div className="mt-2">
+        <RunProgress competitorId={competitor.id} initial={competitor.latestRun} />
+      </div>
+
+      <div className="mt-3.5 flex flex-wrap gap-1.5">
+        {configs
+          .filter((c) => c.enabled && isSignalLive(c.signal_type))
+          .map((c) => (
+            <SignalTag key={c.signal_type} type={c.signal_type} badge className="text-xs" />
+          ))}
+      </div>
+
+      <div className="mt-4 rounded-xl bg-surface-sunken px-4 py-3">
+        <p className="eyebrow">Latest change</p>
+        {competitor.latest ? (
+          <>
+            <p className="mt-1.5 line-clamp-2 text-base font-medium text-ink">
+              {competitor.latest.summary}
+            </p>
+            <TimeAgo
+              iso={competitor.latest.created_at}
+              className="mt-1 block text-sm text-ink-faint"
+            />
+          </>
+        ) : (
+          <p className="mt-1.5 text-base text-ink-faint">Nothing collected yet</p>
+        )}
+      </div>
+
+      <p className="tabular mt-4 flex items-center gap-2 text-sm text-ink-muted">
+        <span
+          aria-hidden
+          className={`size-1.5 rounded-full ${failing ? "bg-sev-critical" : "bg-sev-low"}`}
+        />
+        {failing ? <span className="font-medium text-sev-critical">Needs attention · </span> : null}
+        {enabledCount} signals tracked · {SIGNAL_TYPES.length - enabledCount} coming soon
+      </p>
+    </div>
+  );
+}
+
+function DeleteConfirmModal({
+  competitor,
+  deleting,
+  onCancel,
+  onConfirm,
+}: {
+  competitor: CompetitorRow;
+  deleting: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onCancel();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onCancel]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
+      onClick={onCancel}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="delete-competitor-title"
+        onClick={(event) => event.stopPropagation()}
+        className="w-full max-w-sm rounded-2xl border border-border bg-surface p-6 shadow-lg"
+      >
+        <h2 id="delete-competitor-title" className="text-xl font-bold text-ink">
+          Delete {competitor.name}?
+        </h2>
+        <p className="mt-2 text-base text-ink-muted">
+          This stops monitoring and removes it from your list for good. Its past alerts are kept.
+        </p>
+        <div className="mt-6 flex justify-end gap-3">
+          <button
+            type="button"
+            disabled={deleting}
+            onClick={onCancel}
+            className="rounded-xl border border-border px-4 py-2.5 text-base font-medium text-ink-muted transition-all hover:border-border-strong hover:text-ink disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={deleting}
+            onClick={onConfirm}
+            className="rounded-xl bg-sev-critical px-4 py-2.5 text-base font-semibold text-white transition-all hover:opacity-90 hover:shadow-md disabled:opacity-50"
+          >
+            {deleting ? "Deleting…" : "Delete for good"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function Monitoring({
   competitors,
   pipelineLive,
@@ -566,16 +878,22 @@ export function Monitoring({
   // change something.
   const [managing, setManaging] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
-  const [pending, startTransition] = useTransition();
+  const [, startTransition] = useTransition();
+  const [runningId, setRunningId] = useState<string | null>(null);
   const [deleting, startDeleteTransition] = useTransition();
-  // A single click can't delete — see the confirm step below. Tracked by id so
-  // switching competitors without confirming can't leave a stale "confirm?"
-  // button armed against the wrong one.
+  // A single click can't delete — see DeleteConfirmModal. Tracked by id so
+  // switching competitors without confirming can't leave a stale modal armed
+  // against the wrong one.
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
 
   const selected =
     competitors.find((c) => c.id === selectedId) ?? competitors[0] ?? null;
+
+  // Always called, never conditionally — Rules of Hooks. A competitorId of
+  // "" with no matching rows is a harmless no-op subscription when nothing
+  // is selected (competitors is empty).
+  const selectedConfigs = useLiveSignalConfigs(selected?.id ?? "", selected?.configs ?? []);
 
   const totals = useMemo(() => {
     const configs = competitors.flatMap((c) => c.configs);
@@ -598,13 +916,23 @@ export function Monitoring({
     });
   };
 
+  const runNow = (competitorId: string) => {
+    setRunningId(competitorId);
+    startTransition(async () => {
+      handle(await runCompetitorNow(competitorId));
+      setRunningId(null);
+    });
+  };
+
+  const competitorToDelete = competitors.find((c) => c.id === confirmDeleteId) ?? null;
+
   return (
     <div className="flex flex-col gap-6 px-8">
       <Panel className="p-6">
         <PanelHeading
           eyebrow="Monitoring portfolio"
           title={`${totals.monitored} active ${totals.monitored === 1 ? "competitor" : "competitors"}`}
-          description="Select a competitor to review its monitoring schedule."
+          description="Pick a competitor below to manage its signals."
           aside={
             <div className="flex items-center gap-8">
               {[
@@ -631,152 +959,15 @@ export function Monitoring({
             {notice}
           </p>
         ) : null}
-
-        {competitors.length === 0 ? (
-          <p className="mt-6 rounded-xl border border-dashed border-border-strong p-8 text-base text-ink-muted">
-            No competitors yet. Add one to start collecting changes.
-          </p>
-        ) : (
-          <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {competitors.map((competitor) => {
-              const active = selected?.id === competitor.id;
-              const enabledCount = competitor.configs.filter(
-                (c) => c.enabled && isSignalLive(c.signal_type),
-              ).length;
-              return (
-                <div
-                  key={competitor.id}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => setSelectedId(competitor.id)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault();
-                      setSelectedId(competitor.id);
-                    }
-                  }}
-                  className={`cursor-pointer rounded-2xl border p-5 text-left shadow-sm transition-all hover:shadow-md ${
-                    active
-                      ? "border-accent bg-accent-wash/40 shadow-md"
-                      : "border-border bg-surface hover:border-border-strong"
-                  }`}
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <span
-                      aria-hidden
-                      className="grid size-12 shrink-0 place-items-center rounded-full border border-border bg-surface-sunken text-base font-semibold text-ink-muted"
-                    >
-                      {competitor.name.slice(0, 2).toUpperCase()}
-                    </span>
-                    <button
-                      type="button"
-                      disabled={togglingId === competitor.id}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        toggleActive(competitor);
-                      }}
-                      title={
-                        competitor.active
-                          ? "Pause monitoring"
-                          : "Resume monitoring"
-                      }
-                      className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-semibold transition-all hover:scale-105 hover:opacity-90 disabled:opacity-50 ${
-                        competitor.active
-                          ? "bg-sev-low-wash text-sev-low"
-                          : "bg-surface-sunken text-ink-faint"
-                      }`}
-                    >
-                      <span
-                        aria-hidden
-                        className="size-2 rounded-full bg-current"
-                      />
-                      {togglingId === competitor.id
-                        ? "…"
-                        : competitor.active
-                          ? "Active"
-                          : "Paused"}
-                    </button>
-                  </div>
-
-                  <p className="mt-4 text-lg font-semibold text-ink">
-                    {competitor.name}
-                  </p>
-                  <p className="truncate text-sm text-ink-faint">
-                    {competitor.domain}
-                  </p>
-                  <div className="mt-2">
-                    <RunProgress
-                      key={competitor.id}
-                      competitorId={competitor.id}
-                      initial={competitor.latestRun}
-                    />
-                  </div>
-
-                  <div className="mt-3.5 flex flex-wrap gap-1.5">
-                    {competitor.configs
-                      .filter((c) => c.enabled && isSignalLive(c.signal_type))
-                      .map((c) => (
-                        <SignalTag
-                          key={c.signal_type}
-                          type={c.signal_type}
-                          badge
-                          className="text-xs"
-                        />
-                      ))}
-                  </div>
-
-                  <div className="mt-4 rounded-xl bg-surface-sunken px-4 py-3">
-                    <p className="eyebrow">Latest change</p>
-                    {competitor.latest ? (
-                      <>
-                        <p className="mt-1.5 line-clamp-2 text-base font-medium text-ink">
-                          {competitor.latest.summary}
-                        </p>
-                        <TimeAgo
-                          iso={competitor.latest.created_at}
-                          className="mt-1 block text-sm text-ink-faint"
-                        />
-                      </>
-                    ) : (
-                      <p className="mt-1.5 text-base text-ink-faint">
-                        Nothing collected yet
-                      </p>
-                    )}
-                  </div>
-
-                  <p className="tabular mt-4 flex items-center gap-2 text-sm text-ink-muted">
-                    <span
-                      aria-hidden
-                      className={`size-1.5 rounded-full ${
-                        competitor.configs.some(
-                          (c) => c.enabled && c.last_error,
-                        )
-                          ? "bg-sev-critical"
-                          : "bg-sev-low"
-                      }`}
-                    />
-                    {competitor.configs.some((c) => c.enabled && c.last_error) ? (
-                      <span className="font-medium text-sev-critical">Needs attention · </span>
-                    ) : null}
-                    {enabledCount} signals tracked · {SIGNAL_TYPES.length - enabledCount} coming
-                    soon
-                  </p>
-                </div>
-              );
-            })}
-          </div>
-        )}
       </Panel>
 
       {selected ? (
         <Panel className="p-6">
           <PanelHeading
-            eyebrow="Monitoring contract"
+            eyebrow="Monitoring signals"
             title={selected.name}
             description={`${SIGNAL_TYPES.length} defined signals, with ${
-              selected.configs.filter(
-                (c) => c.enabled && isSignalLive(c.signal_type),
-              ).length
+              selectedConfigs.filter((c) => c.enabled && isSignalLive(c.signal_type)).length
             } currently collected. The rest are coming soon.`}
             aside={
               <div className="flex items-center gap-2">
@@ -797,9 +988,30 @@ export function Monitoring({
             }
           />
 
+          {/* Which competitor "Manage monitoring" applies to — an explicit
+              choice, not just whatever card was last clicked below. */}
+          {competitors.length > 1 ? (
+            <div className="mt-4 flex flex-wrap gap-2">
+              {competitors.map((c) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  onClick={() => setSelectedId(c.id)}
+                  className={`rounded-full px-3.5 py-1.5 text-sm font-semibold transition-all ${
+                    c.id === selected.id
+                      ? "bg-solid text-solid-ink"
+                      : "border border-border text-ink-muted hover:border-border-strong hover:text-ink"
+                  }`}
+                >
+                  {c.name}
+                </button>
+              ))}
+            </div>
+          ) : null}
+
           {!managing ? (
             <div className="mt-5 flex flex-wrap gap-2">
-              {selected.configs
+              {selectedConfigs
                 .filter((c) => c.enabled && isSignalLive(c.signal_type))
                 .map((c) => (
                   <span
@@ -842,7 +1054,7 @@ export function Monitoring({
                       key={signal}
                       competitorId={selected.id}
                       signal={signal}
-                      config={selected.configs.find(
+                      config={selectedConfigs.find(
                         (c) => c.signal_type === signal,
                       )}
                       onChanged={handle}
@@ -853,130 +1065,51 @@ export function Monitoring({
               </div>
             ))}
           </div>
-
-          <div className="mt-5 flex flex-wrap items-center gap-4 border-t border-border pt-4">
-            <div>
-              <p className="text-base text-ink-muted">
-                <span className="font-medium text-ink">
-                  Collection health ·{" "}
-                </span>
-                {selected.configs.filter((c) => c.enabled && c.last_error)
-                  .length === 0
-                  ? `${selected.configs.filter((c) => c.enabled).length} active signals healthy`
-                  : `${selected.configs.filter((c) => c.enabled && c.last_error).length} failing`}
-              </p>
-              <div className="mt-1.5">
-                <RunProgress
-                  key={selected.id}
-                  competitorId={selected.id}
-                  initial={selected.latestRun}
-                />
-              </div>
-            </div>
-
-            <div className="ml-auto flex items-center gap-3">
-              <button
-                type="button"
-                disabled={
-                  pending || !selected.active || isRunActive(selected.latestRun)
-                }
-                onClick={() =>
-                  startTransition(async () =>
-                    handle(await runCompetitorNow(selected.id)),
-                  )
-                }
-                className="rounded-xl border border-border px-4 py-2.5 text-base font-semibold text-ink-muted transition-all hover:border-border-strong hover:text-ink hover:shadow-sm disabled:opacity-50"
-                title={
-                  !selected.active
-                    ? "Competitor is paused"
-                    : isRunActive(selected.latestRun)
-                      ? "A run is already in progress"
-                      : "Run a scrape now"
-                }
-              >
-                Run now
-              </button>
-              <button
-                type="button"
-                disabled={pending}
-                onClick={() =>
-                  startTransition(async () =>
-                    handle(await syncCompetitor(selected.id)),
-                  )
-                }
-                className="rounded-xl border border-border px-4 py-2.5 text-base font-semibold text-ink-muted transition-all hover:border-border-strong hover:text-ink hover:shadow-sm disabled:opacity-50"
-                title="Retry setting the monitoring schedule — use this only if a signal or pause change reported that the schedule failed to save"
-              >
-                Re-sync schedule
-              </button>
-              <button
-                type="button"
-                disabled={pending}
-                onClick={() =>
-                  startTransition(async () =>
-                    handle(
-                      await setCompetitorActive(selected.id, !selected.active),
-                    ),
-                  )
-                }
-                className={
-                  selected.active
-                    ? "rounded-xl border border-border px-4 py-2.5 text-base font-semibold text-ink-muted transition-all hover:border-border-strong hover:text-ink hover:shadow-sm disabled:opacity-50"
-                    : "rounded-xl bg-solid px-4 py-2.5 text-base font-semibold text-solid-ink transition-all hover:bg-solid-hover hover:shadow-md disabled:opacity-50"
-                }
-                title={
-                  selected.active
-                    ? "Stop scraping this competitor until resumed"
-                    : "Start scraping this competitor again on its schedule"
-                }
-              >
-                {selected.active ? "Pause monitoring" : "Resume monitoring"}
-              </button>
-              {confirmDeleteId === selected.id ? (
-                <>
-                  <span className="text-base text-sev-critical">
-                    Delete for good?
-                  </span>
-                  <button
-                    type="button"
-                    disabled={deleting}
-                    onClick={() =>
-                      startDeleteTransition(async () => {
-                        const result = await deleteCompetitor(selected.id);
-                        handle(result);
-                        if (result.ok) {
-                          setConfirmDeleteId(null);
-                          setSelectedId(null);
-                        }
-                      })
-                    }
-                    className="rounded-xl bg-sev-critical px-4 py-2.5 text-base font-semibold text-white transition-all hover:opacity-90 hover:shadow-md disabled:opacity-50"
-                  >
-                    {deleting ? "Deleting…" : "Confirm delete"}
-                  </button>
-                  <button
-                    type="button"
-                    disabled={deleting}
-                    onClick={() => setConfirmDeleteId(null)}
-                    className="rounded-xl border border-border px-4 py-2.5 text-base font-medium text-ink-muted transition-all hover:border-border-strong hover:text-ink disabled:opacity-50"
-                  >
-                    Cancel
-                  </button>
-                </>
-              ) : (
-                <button
-                  type="button"
-                  disabled={pending || deleting}
-                  onClick={() => setConfirmDeleteId(selected.id)}
-                  className="rounded-xl border border-border px-4 py-2.5 text-base font-semibold text-sev-critical transition-all hover:border-sev-critical hover:shadow-sm disabled:opacity-50"
-                  title="Stop monitoring and remove this competitor entirely — its alerts are kept"
-                >
-                  Delete
-                </button>
-              )}
-            </div>
-          </div>
         </Panel>
+      ) : null}
+
+      <Panel className="p-6">
+        <PanelHeading eyebrow="Competitors" title="Your portfolio" />
+
+        {competitors.length === 0 ? (
+          <p className="mt-6 rounded-xl border border-dashed border-border-strong p-8 text-base text-ink-muted">
+            No competitors yet. Add one to start collecting changes.
+          </p>
+        ) : (
+          <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {competitors.map((competitor) => (
+              <CompetitorCard
+                key={competitor.id}
+                competitor={competitor}
+                selected={selected?.id === competitor.id}
+                onSelect={() => setSelectedId(competitor.id)}
+                onToggleActive={() => toggleActive(competitor)}
+                onRunNow={() => runNow(competitor.id)}
+                onDelete={() => setConfirmDeleteId(competitor.id)}
+                togglingId={togglingId}
+                runningId={runningId}
+              />
+            ))}
+          </div>
+        )}
+      </Panel>
+
+      {competitorToDelete ? (
+        <DeleteConfirmModal
+          competitor={competitorToDelete}
+          deleting={deleting}
+          onCancel={() => setConfirmDeleteId(null)}
+          onConfirm={() =>
+            startDeleteTransition(async () => {
+              const result = await deleteCompetitor(competitorToDelete.id);
+              handle(result);
+              if (result.ok) {
+                setConfirmDeleteId(null);
+                if (selectedId === competitorToDelete.id) setSelectedId(null);
+              }
+            })
+          }
+        />
       ) : null}
     </div>
   );
