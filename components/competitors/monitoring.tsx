@@ -123,6 +123,24 @@ function runStatusText(run: ScrapeRun | null): string {
 }
 
 /**
+ * Discrete percentage per status — there is no real progress feed from Apify
+ * mid-run, so this is a stage indicator dressed as a bar, not a measurement.
+ * running/processing get fixed rungs; a subtle pulse on the bar (below)
+ * signals "still working" within a stage rather than implying a stalled 35%.
+ */
+function runProgressPercent(status: ScrapeRun["status"]): number {
+  switch (status) {
+    case "running":
+      return 35;
+    case "processing":
+      return 70;
+    case "succeeded":
+    case "failed":
+      return 100;
+  }
+}
+
+/**
  * Live status for one competitor's most recent scrape run — what "Run Now"
  * actually did, not just whether the click succeeded. Seeded from the
  * server-rendered row, then kept current over Realtime (supabase/11): a
@@ -168,6 +186,25 @@ function RunProgress({
         (payload) => {
           if (!isRenderableScrapeRun(payload.new)) return;
           const row = payload.new;
+          // TEMP DEBUG LOGGING — remove once Run Now progress has been
+          // verified end-to-end against a real Apify run. Logs both outcomes
+          // so success and failure are equally visible in the console.
+          if (row.status === "succeeded") {
+            console.log("[RunProgress DEBUG] succeeded", {
+              competitorId,
+              runId: row.run_id,
+              startedAt: row.started_at,
+              updatedAt: row.updated_at,
+            });
+          } else if (row.status === "failed") {
+            console.log("[RunProgress DEBUG] failed", {
+              competitorId,
+              runId: row.run_id,
+              error: row.error,
+              startedAt: row.started_at,
+              updatedAt: row.updated_at,
+            });
+          }
           setRun((prev) => {
             // A competitor can have more than one run in flight (Run Now while
             // the schedule also fired) — only replace state with the newest.
@@ -189,35 +226,65 @@ function RunProgress({
   }, [competitorId, instanceId]);
 
   if (!run) {
-    return <span className="text-sm text-ink-faint">Never run</span>;
+    return (
+      <div className="flex items-center gap-2">
+        <div
+          aria-hidden
+          className="h-1.5 w-full max-w-32 rounded-full bg-surface-sunken"
+        />
+        <span className="shrink-0 text-sm text-ink-faint">Never run</span>
+      </div>
+    );
   }
 
   const active = isRunActive(run);
+  const failed = run.status === "failed";
+  const succeeded = run.status === "succeeded";
+  const percent = runProgressPercent(run.status);
+  const barColor = failed ? "bg-sev-critical" : succeeded ? "bg-sev-low" : "bg-accent";
 
   return (
-    <span
-      className={`inline-flex items-center gap-1.5 text-sm ${
-        run.status === "failed" ? "text-sev-critical" : "text-ink-faint"
-      }`}
-      title={run.error ?? undefined}
-    >
-      {active ? (
+    <div className="flex flex-col gap-1">
+      <div
+        className="flex items-center gap-2"
+        role="progressbar"
+        aria-valuenow={percent}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-label={`Scrape run ${percent}% ${failed ? "failed" : succeeded ? "complete" : "in progress"}`}
+      >
+        <div className="h-1.5 w-full max-w-32 overflow-hidden rounded-full bg-surface-sunken">
+          <div
+            className={`h-full rounded-full transition-all duration-700 ease-out ${barColor} ${
+              active ? "animate-pulse" : ""
+            }`}
+            style={{ width: `${percent}%` }}
+          />
+        </div>
         <span
-          aria-hidden
-          className="size-2.5 shrink-0 animate-spin rounded-full border-[1.5px] border-current border-t-transparent"
-        />
-      ) : null}
-      {runStatusText(run)}
-      {run.status === "failed" && run.error ? (
-        <span className="max-w-40 truncate">— {run.error}</span>
-      ) : null}
-      {!active ? (
-        <>
-          {" · "}
-          <TimeAgo iso={run.updated_at} />
-        </>
-      ) : null}
-    </span>
+          className={`tabular shrink-0 text-sm font-medium ${
+            failed ? "text-sev-critical" : active ? "text-ink-muted" : "text-ink-faint"
+          }`}
+        >
+          {percent}%
+        </span>
+      </div>
+      <span
+        className={`text-sm ${failed ? "font-semibold text-sev-critical" : "text-ink-faint"}`}
+        title={run.error ?? undefined}
+      >
+        {failed ? "Failed" : runStatusText(run)}
+        {failed && run.error ? (
+          <span className="ml-1 max-w-48 truncate align-bottom">— {run.error}</span>
+        ) : null}
+        {!active ? (
+          <>
+            {" · "}
+            <TimeAgo iso={run.updated_at} />
+          </>
+        ) : null}
+      </span>
+    </div>
   );
 }
 
@@ -637,13 +704,13 @@ export function Monitoring({
                   <p className="truncate text-sm text-ink-faint">
                     {competitor.domain}
                   </p>
-                  <p className="mt-1.5">
+                  <div className="mt-2">
                     <RunProgress
                       key={competitor.id}
                       competitorId={competitor.id}
                       initial={competitor.latestRun}
                     />
-                  </p>
+                  </div>
 
                   <div className="mt-3.5 flex flex-wrap gap-1.5">
                     {competitor.configs
@@ -798,13 +865,13 @@ export function Monitoring({
                   ? `${selected.configs.filter((c) => c.enabled).length} active signals healthy`
                   : `${selected.configs.filter((c) => c.enabled && c.last_error).length} failing`}
               </p>
-              <p className="mt-1">
+              <div className="mt-1.5">
                 <RunProgress
                   key={selected.id}
                   competitorId={selected.id}
                   initial={selected.latestRun}
                 />
-              </p>
+              </div>
             </div>
 
             <div className="ml-auto flex items-center gap-3">
