@@ -688,6 +688,9 @@ export function Monitoring({
                           : "bg-sev-low"
                       }`}
                     />
+                    {competitor.configs.some((c) => c.enabled && c.last_error) ? (
+                      <span className="font-medium text-sev-critical">Needs attention · </span>
+                    ) : null}
                     {enabledCount} signals tracked · {SIGNAL_TYPES.length - enabledCount} coming
                     soon
                   </p>

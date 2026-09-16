@@ -34,7 +34,10 @@
 
   --ink: #15201c;
   --ink-muted: #5b6862;
-  --ink-faint: #8a938e;
+  /* WCAG AA requires 4.5:1 for normal text. The original #8a938e measured
+     ~3.1:1 on --surface/--surface-sunken — this darkened value clears 4.5:1
+     while staying visually the "faintest" tier below --ink-muted. */
+  --ink-faint: #6f7873;
 
   /* Identity */
   --brand: #c2ef4b;
@@ -65,7 +68,9 @@
   --sev-critical-wash: #fdeeec;
   --sev-high: #b45309;
   --sev-high-wash: #fdf3e7;
-  --sev-medium: #9c7c07;
+  /* Original #9c7c07 measured 3.96:1 on white, under the 4.5:1 AA minimum
+     for normal text — darkened while keeping the same amber hue. */
+  --sev-medium: #8a6d06;
   --sev-medium-wash: #fbf5e3;
   --sev-low: #12795c;
   --sev-low-wash: #e7f4ee;
@@ -124,7 +129,8 @@
 
     --ink: #e9efeb;
     --ink-muted: #9aa8a1;
-    --ink-faint: #71807a;
+    /* darkened original #71807a measured ~4.1:1 on dark --surface, under the 4.5:1 AA minimum */
+    --ink-faint: #7b8a83;
 
     --brand: #c2ef4b;
     --brand-ink: #12241a;
@@ -194,7 +200,8 @@
 
   --ink: #e9efeb;
   --ink-muted: #9aa8a1;
-  --ink-faint: #71807a;
+  /* Same AA fix as the media-query dark block above. */
+  --ink-faint: #7b8a83;
 
   --accent: #3fbf9e;
   --accent-hover: #62d3b6;

@@ -93,7 +93,7 @@ export function StoreSetup({
               }}
               className={`flex-1 rounded-lg px-4 py-3 text-base font-semibold transition-all ${
                 mode === "url"
-                  ? "bg-accent text-accent-ink shadow-sm"
+                  ? "bg-accent text-accent-contrast shadow-sm"
                   : "text-ink-muted hover:text-ink"
               }`}
             >
@@ -106,7 +106,7 @@ export function StoreSetup({
               }}
               className={`flex-1 rounded-lg px-4 py-3 text-base font-semibold transition-all ${
                 mode === "description"
-                  ? "bg-accent text-accent-ink shadow-sm"
+                  ? "bg-accent text-accent-contrast shadow-sm"
                   : "text-ink-muted hover:text-ink"
               }`}
             >
@@ -138,8 +138,12 @@ export function StoreSetup({
                     className="flex-1 rounded-lg border border-border bg-surface px-4 py-3 text-base text-ink placeholder:text-ink-faint focus:border-accent focus:outline-2 focus:outline-offset-0 focus:outline-accent disabled:bg-surface-sunken disabled:opacity-50"
                   />
                   {verified && (
-                    <div className="flex items-center justify-center rounded-lg bg-green-100 px-4">
-                      <span className="text-2xl">✓</span>
+                    <div
+                      className="flex items-center justify-center rounded-lg bg-sev-low-wash px-4"
+                      role="status"
+                    >
+                      <span aria-hidden className="text-2xl text-sev-low">✓</span>
+                      <span className="sr-only">Store verified</span>
                     </div>
                   )}
                 </div>
@@ -149,7 +153,7 @@ export function StoreSetup({
                 <button
                   onClick={verifyUrl}
                   disabled={reading || !url.trim()}
-                  className="w-full rounded-lg bg-accent px-4 py-3 text-base font-semibold text-accent-ink transition-all hover:bg-accent-hover disabled:opacity-60"
+                  className="w-full rounded-lg bg-accent px-4 py-3 text-base font-semibold text-accent-contrast transition-all hover:bg-accent-hover disabled:opacity-60"
                 >
                   {reading ? "Verifying…" : "Verify store"}
                 </button>
@@ -190,7 +194,7 @@ export function StoreSetup({
               <button
                 onClick={discoverCompetitors}
                 disabled={reading || !description.trim()}
-                className="w-full rounded-lg bg-accent px-4 py-3 text-base font-semibold text-accent-ink transition-all hover:bg-accent-hover disabled:opacity-60"
+                className="w-full rounded-lg bg-accent px-4 py-3 text-base font-semibold text-accent-contrast transition-all hover:bg-accent-hover disabled:opacity-60"
               >
                 {reading ? "Finding competitors…" : "Find competitors"}
               </button>
