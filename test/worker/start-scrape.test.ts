@@ -64,13 +64,28 @@ describe("startScrape", () => {
       proxyConfiguration: { useApifyProxy: true, apifyProxyGroups: ["RESIDENTIAL"] },
     });
 
-    expect(db.recordScrapeRun).toHaveBeenCalledWith("run-abc", "comp-1");
+    expect(db.recordScrapeRun).toHaveBeenCalledWith("run-abc", "comp-1", undefined);
 
     expect(queueClient.enqueueFromWorker).toHaveBeenCalledWith(
       "check_apify_run",
       { runId: "run-abc", competitorId: "comp-1" },
       { singletonKey: "run-abc", startAfter: 1800 },
     );
+  });
+
+  it("passes a Run Now signal selection through to recordScrapeRun", async () => {
+    mockApifyRunStart({ runId: "run-def" });
+
+    await startScrape([
+      {
+        data: { competitorId: "comp-1", signalTypes: ["sku_price_change", "promo_discount"] },
+      } as Job<JobData["start_scrape"]>,
+    ]);
+
+    expect(db.recordScrapeRun).toHaveBeenCalledWith("run-def", "comp-1", [
+      "sku_price_change",
+      "promo_discount",
+    ]);
   });
 
   it("sends the webhook secret only in the headers template, never the URL", async () => {

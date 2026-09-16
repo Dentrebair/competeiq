@@ -1,4 +1,5 @@
 import { INTERPRETATION_SYSTEM_PROMPT } from "./interpretation-prompt";
+import type { SignalType } from "@/lib/signals";
 
 /**
  * Signal Evaluation: turning one Collection Run into Alerts and a new Baseline.
@@ -143,22 +144,36 @@ export function productHandle(product: ApifyProduct): string | null {
  * and inventory then report nothing, because every product would look new.
  * Promo needs no history and fires anyway.
  */
+/**
+ * `allowedSignals`, when given, restricts the result to those signal types —
+ * the picker on Run Now (supabase/16). Every diff branch still runs
+ * regardless (they're cheap, pure, and share no state), only the OUTPUT is
+ * filtered — simpler and safer than threading a condition into each branch,
+ * and it keeps this function's behavior unchanged (every signal, evaluated)
+ * when the caller passes nothing, which is every caller except a Run Now
+ * that used the picker.
+ */
 export function evaluateSignals(
   products: ApifyProduct[],
   baseline: BaselineEntry[],
   competitor: CompetitorRef,
+  allowedSignals?: SignalType[] | null,
 ): DetectedChange[] {
   const known = baseline.filter(
     (row): row is BaselineEntry & { product_handle: string } => Boolean(row && row.product_handle),
   );
   const firstRun = known.length === 0;
 
-  return [
+  const changes = [
     ...diffPrice(products, known, competitor, firstRun),
     ...diffCatalog(products, known, competitor, firstRun),
     ...diffPromo(products, competitor),
     ...diffInventory(products, known, competitor, firstRun),
   ];
+
+  if (!allowedSignals) return changes;
+  const allowed = new Set<string>(allowedSignals);
+  return changes.filter((change) => allowed.has(change.signal_type));
 }
 
 function diffPrice(

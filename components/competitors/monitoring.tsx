@@ -757,7 +757,7 @@ function CompetitorCard({
   selected,
   onSelect,
   onToggleActive,
-  onRunNow,
+  onOpenRunNow,
   onRunDelayed,
   onDelete,
   togglingId,
@@ -767,7 +767,8 @@ function CompetitorCard({
   selected: boolean;
   onSelect: () => void;
   onToggleActive: () => void;
-  onRunNow: () => void;
+  /** Opens the signal picker (RunNowModal) — Run Now no longer fires directly from the card. */
+  onOpenRunNow: () => void;
   onRunDelayed: () => Promise<CompetitorActionState>;
   onDelete: () => void;
   togglingId: string | null;
@@ -840,7 +841,7 @@ function CompetitorCard({
             disabled={runPending || delayedActive || !competitor.active}
             onClick={(event) => {
               event.stopPropagation();
-              onRunNow();
+              onOpenRunNow();
             }}
             title={
               !competitor.active
@@ -1003,6 +1004,119 @@ function CompetitorCard({
   );
 }
 
+/**
+ * The picker Run Now opens before it enqueues anything. Only enabled, live
+ * signals are offered — a coming_soon or disabled signal produces nothing
+ * from a scrape regardless of whether it's "selected". Deliberately not
+ * offered on "Run in 2 min", which always previews the full schedule.
+ */
+function RunNowModal({
+  competitor,
+  pending,
+  onCancel,
+  onConfirm,
+}: {
+  competitor: CompetitorRow;
+  pending: boolean;
+  onCancel: () => void;
+  onConfirm: (signalTypes: SignalType[]) => void;
+}) {
+  const selectable = useMemo(
+    () => competitor.configs.filter((c) => c.enabled && isSignalLive(c.signal_type)),
+    [competitor.configs],
+  );
+  const [selected, setSelected] = useState<Set<SignalType>>(
+    () => new Set(selectable.map((c) => c.signal_type)),
+  );
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onCancel();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onCancel]);
+
+  const toggle = (type: SignalType) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(type)) next.delete(type);
+      else next.add(type);
+      return next;
+    });
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
+      onClick={onCancel}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="run-now-title"
+        onClick={(event) => event.stopPropagation()}
+        className="w-full max-w-sm rounded-2xl border border-border bg-surface p-6 shadow-lg"
+      >
+        <h2 id="run-now-title" className="text-xl font-bold text-ink">
+          Run now for {competitor.name}
+        </h2>
+        <p className="mt-2 text-base text-ink-muted">
+          Choose which signals to check for on this run.
+        </p>
+
+        <div className="mt-4 flex flex-col gap-2">
+          {selectable.length === 0 ? (
+            <p className="text-sm text-ink-faint">
+              No signals are enabled for this competitor yet — enable one in Manage monitoring
+              first.
+            </p>
+          ) : (
+            selectable.map((c) => (
+              <label
+                key={c.signal_type}
+                className="flex cursor-pointer items-center gap-3 rounded-lg border border-border px-3 py-2.5 transition-colors hover:bg-surface-sunken"
+              >
+                <input
+                  type="checkbox"
+                  checked={selected.has(c.signal_type)}
+                  onChange={() => toggle(c.signal_type)}
+                  className="size-4 rounded border-border-strong accent-accent"
+                />
+                <SignalIcon type={c.signal_type} className="size-4 text-ink-muted" />
+                <span className="text-base font-medium text-ink">
+                  {SIGNAL_TYPE_LABELS[c.signal_type]}
+                </span>
+              </label>
+            ))
+          )}
+        </div>
+
+        <div className="mt-6 flex justify-end gap-3">
+          <button
+            type="button"
+            disabled={pending}
+            onClick={onCancel}
+            className="rounded-xl border border-border px-4 py-2.5 text-base font-medium text-ink-muted transition-all hover:border-border-strong hover:text-ink disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={pending || selected.size === 0}
+            onClick={() => onConfirm([...selected])}
+            className="rounded-xl bg-solid px-4 py-2.5 text-base font-semibold text-solid-ink transition-all hover:bg-solid-hover hover:shadow-md disabled:opacity-50"
+          >
+            {pending
+              ? "Starting…"
+              : `Run ${selected.size === selectable.length ? "all" : selected.size}`}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function DeleteConfirmModal({
   competitor,
   deleting,
@@ -1086,6 +1200,11 @@ export function Monitoring({
   // against the wrong one.
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
+  // Run Now opens a signal picker rather than firing immediately — tracked
+  // the same way as confirmDeleteId, by id, so it can't stay armed against
+  // the wrong competitor.
+  const [runNowModalId, setRunNowModalId] = useState<string | null>(null);
+  const [confirmingRun, startRunConfirmTransition] = useTransition();
 
   const selected =
     competitors.find((c) => c.id === selectedId) ?? competitors[0] ?? null;
@@ -1116,11 +1235,13 @@ export function Monitoring({
     });
   };
 
-  const runNow = (competitorId: string) => {
+  const runNow = (competitorId: string, signalTypes: SignalType[]) => {
     setRunningId(competitorId);
-    startTransition(async () => {
-      handle(await runCompetitorNow(competitorId));
+    startRunConfirmTransition(async () => {
+      const result = await runCompetitorNow(competitorId, signalTypes);
+      handle(result);
       setRunningId(null);
+      if (result.ok) setRunNowModalId(null);
     });
   };
 
@@ -1135,6 +1256,7 @@ export function Monitoring({
   };
 
   const competitorToDelete = competitors.find((c) => c.id === confirmDeleteId) ?? null;
+  const competitorForRunNow = competitors.find((c) => c.id === runNowModalId) ?? null;
 
   return (
     <div className="flex flex-col gap-6 px-8">
@@ -1294,7 +1416,7 @@ export function Monitoring({
                 selected={selected?.id === competitor.id}
                 onSelect={() => setSelectedId(competitor.id)}
                 onToggleActive={() => toggleActive(competitor)}
-                onRunNow={() => runNow(competitor.id)}
+                onOpenRunNow={() => setRunNowModalId(competitor.id)}
                 onRunDelayed={() => runDelayed(competitor.id)}
                 onDelete={() => setConfirmDeleteId(competitor.id)}
                 togglingId={togglingId}
@@ -1304,6 +1426,15 @@ export function Monitoring({
           </div>
         )}
       </Panel>
+
+      {competitorForRunNow ? (
+        <RunNowModal
+          competitor={competitorForRunNow}
+          pending={confirmingRun}
+          onCancel={() => setRunNowModalId(null)}
+          onConfirm={(signalTypes) => runNow(competitorForRunNow.id, signalTypes)}
+        />
+      ) : null}
 
       {competitorToDelete ? (
         <DeleteConfirmModal

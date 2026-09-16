@@ -29,7 +29,7 @@ const CHECK_DELAY_SECONDS = 30 * 60;
 export async function startScrape(jobs: Job<JobData["start_scrape"]>[]): Promise<void> {
   for (const job of jobs) {
     try {
-      await runStartScrape(job.data.competitorId);
+      await runStartScrape(job.data.competitorId, job.data.signalTypes);
     } catch (error) {
       logError("start_scrape_failed", error, { competitorId: job.data.competitorId });
       throw error;
@@ -37,16 +37,21 @@ export async function startScrape(jobs: Job<JobData["start_scrape"]>[]): Promise
   }
 }
 
-async function runStartScrape(competitorId: string): Promise<void> {
+async function runStartScrape(competitorId: string, signalTypes?: string[]): Promise<void> {
   const competitor = await getScrapeTarget(competitorId);
   if (!competitor) {
     throw new Error(`No active competitor ${competitorId} to scrape`);
   }
 
-  log("start_scrape_started", { competitorId, name: competitor.name, url: competitor.url });
+  log("start_scrape_started", {
+    competitorId,
+    name: competitor.name,
+    url: competitor.url,
+    signalTypes: signalTypes ?? "all",
+  });
 
   const run = await startApifyRun(competitor.url);
-  await recordScrapeRun(run.id, competitor.id);
+  await recordScrapeRun(run.id, competitor.id, signalTypes);
 
   log("start_scrape_run_created", { competitorId, runId: run.id });
 

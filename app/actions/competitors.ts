@@ -323,6 +323,7 @@ export async function setCompetitorActive(
 async function runCompetitorAt(
   competitorId: string,
   startAfterSeconds: number,
+  signalTypes?: SignalType[],
 ): Promise<CompetitorActionState> {
   await requireUser();
 
@@ -355,7 +356,7 @@ async function runCompetitorAt(
   try {
     await enqueue(
       "start_scrape",
-      { competitorId },
+      { competitorId, signalTypes },
       startAfterSeconds > 0
         ? { singletonKey: competitorId, startAfter: startAfterSeconds }
         : { singletonKey: competitorId },
@@ -370,9 +371,19 @@ async function runCompetitorAt(
   }
 }
 
-/** Run Now — replaces n8n's Manual Trigger. See runCompetitorAt for the shared guardrail. */
-export async function runCompetitorNow(competitorId: string): Promise<CompetitorActionState> {
-  return runCompetitorAt(competitorId, 0);
+/**
+ * Run Now — replaces n8n's Manual Trigger. See runCompetitorAt for the
+ * shared guardrail.
+ *
+ * `signalTypes`, when given, restricts this run to evaluating only those
+ * signals — the picker the operator sees before confirming. Omitted means
+ * every enabled live signal, same as before the picker existed.
+ */
+export async function runCompetitorNow(
+  competitorId: string,
+  signalTypes?: SignalType[],
+): Promise<CompetitorActionState> {
+  return runCompetitorAt(competitorId, 0, signalTypes);
 }
 
 /**
@@ -380,6 +391,10 @@ export async function runCompetitorNow(competitorId: string): Promise<Competitor
  * schedule will do (started -> running -> succeeded/failed), without
  * waiting for its actual next tick. Useful for verifying a competitor's
  * pipeline end-to-end without sitting on your hands for hours.
+ *
+ * Deliberately takes no signal selection — this previews the schedule,
+ * which always evaluates every enabled live signal. The picker is a Run Now
+ * concept only.
  */
 const DELAYED_RUN_SECONDS = 120;
 

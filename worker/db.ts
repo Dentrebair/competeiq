@@ -55,30 +55,44 @@ export async function getScrapeTarget(competitorId: string): Promise<ScrapeTarge
   return rows[0] ?? null;
 }
 
+export interface CompetitorForRunRow extends CompetitorRow {
+  /** null means no restriction — evaluate every live signal, as before this column existed. */
+  requestedSignals: string[] | null;
+}
+
 /**
  * The competitor a run belongs to, from the worker's own record (08, written
  * by start_scrape when it started the run) — never from the webhook body
- * (ADR-0005).
+ * (ADR-0005). Also carries the signal selection Run Now's picker made for
+ * this run (supabase/16), for the same reason: it has to survive until this
+ * exact lookup, since the webhook payload that triggers it carries nothing
+ * but the run ID.
  */
-export async function getCompetitorForRun(runId: string): Promise<CompetitorRow | null> {
+export async function getCompetitorForRun(runId: string): Promise<CompetitorForRunRow | null> {
   const db = getPipelineDb();
-  const { rows } = await db.query<CompetitorRow>(
-    `select c.id, c.name
+  const { rows } = await db.query<CompetitorRow & { requested_signals: string[] | null }>(
+    `select c.id, c.name, sr.requested_signals
        from public.scrape_runs sr
        join public.competitors c on c.id = sr.competitor_id
       where sr.run_id = $1`,
     [runId],
   );
-  return rows[0] ?? null;
+  const row = rows[0];
+  if (!row) return null;
+  return { id: row.id, name: row.name, requestedSignals: row.requested_signals };
 }
 
 /** Written by start_scrape the moment it starts an Apify run. */
-export async function recordScrapeRun(runId: string, competitorId: string): Promise<void> {
+export async function recordScrapeRun(
+  runId: string,
+  competitorId: string,
+  requestedSignals?: string[],
+): Promise<void> {
   const db = getPipelineDb();
   await db.query(
-    `insert into public.scrape_runs (run_id, competitor_id) values ($1, $2)
+    `insert into public.scrape_runs (run_id, competitor_id, requested_signals) values ($1, $2, $3)
      on conflict (run_id) do nothing`,
-    [runId, competitorId],
+    [runId, competitorId, requestedSignals ?? null],
   );
 }
 

@@ -10,6 +10,7 @@ import {
   baselineRows,
 } from "@/lib/pipeline/signal-evaluation";
 import type { ApifyProduct, Interpretation, DetectedChange } from "@/lib/pipeline/signal-evaluation";
+import type { SignalType } from "@/lib/signals";
 import { baselineHistoryRows } from "@/lib/pipeline/baseline-history";
 import { requireEnv } from "@/lib/env";
 import { log, logError } from "../log";
@@ -74,8 +75,17 @@ async function processRun(job: Job<JobData["process_apify_run"]>): Promise<void>
     log("process_apify_run_dataset_fetched", { runId, productCount: products.length });
 
     const baseline = await getBaseline(competitor.id);
-    const changes: DetectedChange[] = evaluateSignals(products, baseline, competitor);
-    log("process_apify_run_changes_evaluated", { runId, changeCount: changes.length });
+    const changes: DetectedChange[] = evaluateSignals(
+      products,
+      baseline,
+      competitor,
+      competitor.requestedSignals as SignalType[] | null,
+    );
+    log("process_apify_run_changes_evaluated", {
+      runId,
+      changeCount: changes.length,
+      requestedSignals: competitor.requestedSignals ?? "all",
+    });
 
     const interpretations = await Promise.all(
       changes.map((change) => callClaudeWithRetry(change)),

@@ -1,5 +1,7 @@
 import type { Job, Queue, WorkOptions } from "pg-boss";
 
+import type { SignalType } from "@/lib/signals";
+
 /**
  * Every kind of Processing Job, in one place.
  *
@@ -18,8 +20,14 @@ import type { Job, Queue, WorkOptions } from "pg-boss";
  */
 
 export interface JobData {
-  /** Start one Apify scrape for a competitor. Queued by its schedule or by Run Now. */
-  start_scrape: { competitorId: string };
+  /**
+   * Start one Apify scrape for a competitor. Queued by its schedule or by Run
+   * Now. `signalTypes`, when present, restricts which signals
+   * process_apify_run evaluates from this run's data — the picker on Run
+   * Now. Undefined (schedule, "Run in 2 min") means no restriction: every
+   * live signal is evaluated, same as before this field existed.
+   */
+  start_scrape: { competitorId: string; signalTypes?: SignalType[] };
   /** The backstop for a lost webhook: look at a run about 30 minutes after it started. */
   check_apify_run: { runId: string; competitorId: string };
   /** Turn one finished Collection Run into Alerts and a new Baseline. */
