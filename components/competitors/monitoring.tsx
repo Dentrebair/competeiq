@@ -9,6 +9,7 @@ import {
   setCompetitorActive,
   updateSignalConfig,
   runCompetitorNow,
+  runCompetitorInTwoMinutes,
   type CompetitorActionState,
 } from "@/app/actions/competitors";
 import { suggestAlternativesFor } from "@/app/actions/onboarding";
@@ -122,6 +123,80 @@ function TrashIcon({ className = "size-3.5" }: { className?: string }) {
   );
 }
 
+function ClockIcon({ className = "size-3.5" }: { className?: string }) {
+  return (
+    <svg
+      aria-hidden
+      viewBox="0 0 16 16"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <circle cx="8" cy="8" r="6" />
+      <path d="M8 4.8V8l2.4 1.4" />
+    </svg>
+  );
+}
+
+/**
+ * A small ring, used only for the "Run in 2 min" preview — the linear bar
+ * (RunProgress) stays the visual language for normal Run Now clicks and
+ * scheduled runs. This one is deliberately distinct so a delayed preview
+ * never reads as an actual scheduled or manual run in progress.
+ */
+function CircularProgress({
+  percent,
+  className = "text-accent",
+  size = 32,
+  strokeWidth = 3,
+}: {
+  percent: number;
+  className?: string;
+  size?: number;
+  strokeWidth?: number;
+}) {
+  const radius = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const offset = circumference - (Math.min(100, Math.max(0, percent)) / 100) * circumference;
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox={`0 0 ${size} ${size}`}
+      className="-rotate-90"
+      role="progressbar"
+      aria-valuenow={percent}
+      aria-valuemin={0}
+      aria-valuemax={100}
+    >
+      <circle
+        cx={size / 2}
+        cy={size / 2}
+        r={radius}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={strokeWidth}
+        className="text-surface-sunken"
+      />
+      <circle
+        cx={size / 2}
+        cy={size / 2}
+        r={radius}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={strokeWidth}
+        strokeLinecap="round"
+        strokeDasharray={circumference}
+        strokeDashoffset={offset}
+        className={`transition-all duration-500 ease-out ${className}`}
+      />
+    </svg>
+  );
+}
+
 /** Same caution as isRenderableAlert in alerts-table.tsx: Realtime can deliver a partial row. */
 function isRenderableScrapeRun(row: unknown): row is ScrapeRun {
   if (!row || typeof row !== "object") return false;
@@ -174,28 +249,28 @@ function runProgressPercent(status: ScrapeRun["status"]): number {
  * fresh start_scrape INSERTs the row, and process_apify_run /
  * check_apify_run UPDATE it as the run moves through running -> processing ->
  * succeeded/failed.
+ *
+ * Pulled out of RunProgress so the run's live status can drive more than one
+ * piece of UI — the progress bar AND the Run Now button's disabled/spinner
+ * state both need it. Before this split, the button only knew about a run it
+ * had itself started this session (via local `runningId` state): a run
+ * fired by the competitor's own cron schedule updated the bar correctly but
+ * left the button looking idle and clickable the whole time.
  */
-function RunProgress({
-  competitorId,
-  initial,
-}: {
-  competitorId: string;
-  initial: ScrapeRun | null;
-}) {
+function useLiveScrapeRun(competitorId: string, initial: ScrapeRun | null): ScrapeRun | null {
   // No effect syncs `initial` into state — callers pass key={competitorId} so
   // switching competitors remounts this fresh instead, which is also what
   // correctly resets the Realtime subscription below.
   const [run, setRun] = useState<ScrapeRun | null>(initial);
 
-  // Per-instance, not just per-competitor: this component can render more
-  // than once for the same competitor at once. Supabase's client keys
-  // channels by name, so two instances sharing `scrape-runs-${competitorId}`
-  // collide — the second `.on()` call throws "cannot add postgres_changes
-  // callbacks ... after subscribe()" against the first instance's
-  // already-subscribed channel, an uncaught error that took the whole page
-  // down. Each instance getting its own unique channel name fixes that; both
-  // still filter on the same competitor_id and so both still receive every
-  // update.
+  // Per-instance, not just per-competitor: this hook can be used more than
+  // once for the same competitor at once. Supabase's client keys channels by
+  // name, so two instances sharing `scrape-runs-${competitorId}` collide —
+  // the second `.on()` call throws "cannot add postgres_changes callbacks
+  // ... after subscribe()" against the first instance's already-subscribed
+  // channel, an uncaught error that took the whole page down. Each instance
+  // getting its own unique channel name fixes that; both still filter on the
+  // same competitor_id and so both still receive every update.
   const instanceId = useId();
 
   useEffect(() => {
@@ -252,6 +327,11 @@ function RunProgress({
     };
   }, [competitorId, instanceId]);
 
+  return run;
+}
+
+/** Purely presentational now — see useLiveScrapeRun for where `run` comes from. */
+function RunProgress({ run }: { run: ScrapeRun | null }) {
   if (!run) {
     return (
       <div className="flex items-center gap-2">
@@ -646,12 +726,39 @@ function AddCompetitor({
 }
 
 /** One card in the portfolio grid. Its own component so useLiveSignalConfigs — a hook — can be called per-competitor without breaking the Rules of Hooks inside a .map(). */
+/** "queued" is a client-only phase — nothing in the database says a delayed run is waiting to start. */
+type DelayedPhase = "queued" | ScrapeRun["status"];
+
+const DELAYED_RUN_MS = 120_000;
+
+function delayedRunPercent(phase: DelayedPhase, queuedElapsedMs: number): number {
+  switch (phase) {
+    case "queued":
+      return Math.min(40, (queuedElapsedMs / DELAYED_RUN_MS) * 40);
+    case "running":
+      return 60;
+    case "processing":
+      return 80;
+    case "succeeded":
+    case "failed":
+      return 100;
+  }
+}
+
+function formatCountdown(remainingMs: number): string {
+  const totalSeconds = Math.max(0, Math.ceil(remainingMs / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+}
+
 function CompetitorCard({
   competitor,
   selected,
   onSelect,
   onToggleActive,
   onRunNow,
+  onRunDelayed,
   onDelete,
   togglingId,
   runningId,
@@ -661,6 +768,7 @@ function CompetitorCard({
   onSelect: () => void;
   onToggleActive: () => void;
   onRunNow: () => void;
+  onRunDelayed: () => Promise<CompetitorActionState>;
   onDelete: () => void;
   togglingId: string | null;
   runningId: string | null;
@@ -668,9 +776,38 @@ function CompetitorCard({
   const configs = useLiveSignalConfigs(competitor.id, competitor.configs);
   const enabledCount = configs.filter((c) => c.enabled && isSignalLive(c.signal_type)).length;
   const failing = configs.some((c) => c.enabled && c.last_error);
-  const scrapeActive = isRunActive(competitor.latestRun);
+  const run = useLiveScrapeRun(competitor.id, competitor.latestRun);
+  const scrapeActive = isRunActive(run);
   const runPending = runningId === competitor.id || scrapeActive;
   const togglePending = togglingId === competitor.id;
+
+  // The "Run in 2 min" preview — purely client-side until the delayed job
+  // actually fires and produces a real scrape_runs row.
+  const [delayedAt, setDelayedAt] = useState<number | null>(null);
+  const [delayedPending, startDelayedTransition] = useTransition();
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (delayedAt === null) return;
+    const interval = setInterval(() => setNow(Date.now()), 500);
+    return () => clearInterval(interval);
+  }, [delayedAt]);
+
+  const delayedRunStarted =
+    delayedAt !== null && run !== null && new Date(run.started_at).getTime() >= delayedAt;
+  const delayedPhase: DelayedPhase | null =
+    delayedAt === null ? null : delayedRunStarted && run ? run.status : "queued";
+  const delayedTerminal = delayedPhase === "succeeded" || delayedPhase === "failed";
+  const delayedPercent =
+    delayedPhase === null ? 0 : delayedRunPercent(delayedPhase, now - (delayedAt ?? now));
+  const delayedActive = delayedAt !== null && !delayedTerminal;
+
+  const runDelayed = () => {
+    startDelayedTransition(async () => {
+      const result = await onRunDelayed();
+      if (result.ok) setDelayedAt(Date.now());
+    });
+  };
 
   return (
     <div
@@ -700,7 +837,7 @@ function CompetitorCard({
         <div className="flex items-center gap-1.5">
           <button
             type="button"
-            disabled={runPending || !competitor.active}
+            disabled={runPending || delayedActive || !competitor.active}
             onClick={(event) => {
               event.stopPropagation();
               onRunNow();
@@ -710,7 +847,9 @@ function CompetitorCard({
                 ? "Competitor is paused"
                 : scrapeActive
                   ? "A run is already in progress"
-                  : "Run a scrape now"
+                  : delayedActive
+                    ? "A delayed run is already queued"
+                    : "Run a scrape now"
             }
             className="grid size-9 place-items-center rounded-full border border-border text-ink-muted transition-all hover:border-border-strong hover:text-ink disabled:opacity-40"
           >
@@ -723,6 +862,33 @@ function CompetitorCard({
               <RunIcon />
             )}
             <span className="sr-only">Run now</span>
+          </button>
+
+          <button
+            type="button"
+            disabled={delayedPending || delayedActive || runPending || !competitor.active}
+            onClick={(event) => {
+              event.stopPropagation();
+              runDelayed();
+            }}
+            title={
+              !competitor.active
+                ? "Competitor is paused"
+                : delayedActive
+                  ? "A delayed run is already queued"
+                  : "Preview this competitor's schedule — run in ~2 minutes"
+            }
+            className="grid size-9 place-items-center rounded-full border border-border text-ink-muted transition-all hover:border-border-strong hover:text-ink disabled:opacity-40"
+          >
+            {delayedPending ? (
+              <span
+                aria-hidden
+                className="size-3.5 animate-spin rounded-full border-[1.5px] border-current border-t-transparent"
+              />
+            ) : (
+              <ClockIcon />
+            )}
+            <span className="sr-only">Run in 2 minutes</span>
           </button>
 
           <button
@@ -763,8 +929,42 @@ function CompetitorCard({
       <p className="mt-4 text-lg font-semibold text-ink">{competitor.name}</p>
       <p className="truncate text-sm text-ink-faint">{competitor.domain}</p>
       <div className="mt-2">
-        <RunProgress competitorId={competitor.id} initial={competitor.latestRun} />
+        <RunProgress run={run} />
       </div>
+
+      {delayedPhase ? (
+        <div className="mt-2 flex items-center gap-2.5 rounded-xl border border-border bg-surface-sunken px-3 py-2">
+          <CircularProgress
+            percent={delayedPercent}
+            size={26}
+            strokeWidth={2.5}
+            className={
+              delayedPhase === "failed"
+                ? "text-sev-critical"
+                : delayedPhase === "succeeded"
+                  ? "text-sev-low"
+                  : "text-accent"
+            }
+          />
+          <span
+            className={`text-sm ${delayedPhase === "failed" ? "font-semibold text-sev-critical" : "text-ink-muted"}`}
+            title={delayedPhase === "failed" ? (run?.error ?? undefined) : undefined}
+          >
+            {delayedPhase === "queued"
+              ? `Preview run starting in ${formatCountdown(DELAYED_RUN_MS - (now - (delayedAt ?? now)))}`
+              : delayedPhase === "running"
+                ? "Preview run: running…"
+                : delayedPhase === "processing"
+                  ? "Preview run: processing…"
+                  : delayedPhase === "succeeded"
+                    ? "Preview run: completed"
+                    : "Preview run: failed"}
+            {delayedPhase === "failed" && run?.error ? (
+              <span className="ml-1 max-w-40 truncate align-bottom">— {run.error}</span>
+            ) : null}
+          </span>
+        </div>
+      ) : null}
 
       <div className="mt-3.5 flex flex-wrap gap-1.5">
         {configs
@@ -922,6 +1122,16 @@ export function Monitoring({
       handle(await runCompetitorNow(competitorId));
       setRunningId(null);
     });
+  };
+
+  // Returns the result (rather than just handling it) so each card's own
+  // countdown only starts once the enqueue has actually succeeded — a
+  // free-tier cooldown rejection shouldn't animate a preview that was never
+  // queued.
+  const runDelayed = async (competitorId: string): Promise<CompetitorActionState> => {
+    const result = await runCompetitorInTwoMinutes(competitorId);
+    handle(result);
+    return result;
   };
 
   const competitorToDelete = competitors.find((c) => c.id === confirmDeleteId) ?? null;
@@ -1085,6 +1295,7 @@ export function Monitoring({
                 onSelect={() => setSelectedId(competitor.id)}
                 onToggleActive={() => toggleActive(competitor)}
                 onRunNow={() => runNow(competitor.id)}
+                onRunDelayed={() => runDelayed(competitor.id)}
                 onDelete={() => setConfirmDeleteId(competitor.id)}
                 togglingId={togglingId}
                 runningId={runningId}

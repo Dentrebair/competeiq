@@ -305,19 +305,25 @@ export async function setCompetitorActive(
 }
 
 /**
- * Run Now — replaces n8n's Manual Trigger. Enqueues the same start_scrape job
- * the competitor's own schedule would fire, immediately.
+ * Shared by runCompetitorNow and runCompetitorInTwoMinutes — same guardrail,
+ * same job, different `startAfter`. Enqueues the same start_scrape job the
+ * competitor's own schedule would fire, just sooner (or immediately).
  *
  * Deliberately not deduped beyond the queue's own "short" policy (at most one
- * start_scrape waiting per competitor) — a second click while one is already
- * queued collapses harmlessly rather than erroring.
+ * start_scrape waiting per competitor, shared across both entry points via
+ * the same singletonKey) — a second click while one is already queued
+ * collapses harmlessly rather than erroring or double-scraping.
  *
  * The free-tier cooldown is a separate, coarser check on top of that: once
- * live, at most one Run Now per competitor per
+ * live, at most one manual trigger per competitor per
  * FREE_TIER_RUN_NOW_COOLDOWN_HOURS, checked against the last row in
- * scrape_runs regardless of how it started (schedule or a previous Run Now).
+ * scrape_runs regardless of how it started (schedule, Run Now, or the
+ * 2-minute delayed preview).
  */
-export async function runCompetitorNow(competitorId: string): Promise<CompetitorActionState> {
+async function runCompetitorAt(
+  competitorId: string,
+  startAfterSeconds: number,
+): Promise<CompetitorActionState> {
   await requireUser();
 
   if (!isQueueConfigured()) {
@@ -347,13 +353,38 @@ export async function runCompetitorNow(competitorId: string): Promise<Competitor
   }
 
   try {
-    await enqueue("start_scrape", { competitorId }, { singletonKey: competitorId });
+    await enqueue(
+      "start_scrape",
+      { competitorId },
+      startAfterSeconds > 0
+        ? { singletonKey: competitorId, startAfter: startAfterSeconds }
+        : { singletonKey: competitorId },
+    );
     return { ok: true, error: null, warning: null };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not queue the scrape.";
-    console.error(JSON.stringify({ event: "run_competitor_now_failed", competitorId, error: message }));
+    console.error(
+      JSON.stringify({ event: "run_competitor_failed", competitorId, startAfterSeconds, error: message }),
+    );
     return { ...EMPTY, error: message };
   }
+}
+
+/** Run Now — replaces n8n's Manual Trigger. See runCompetitorAt for the shared guardrail. */
+export async function runCompetitorNow(competitorId: string): Promise<CompetitorActionState> {
+  return runCompetitorAt(competitorId, 0);
+}
+
+/**
+ * Run in ~2 minutes — a preview of exactly what this competitor's own cron
+ * schedule will do (started -> running -> succeeded/failed), without
+ * waiting for its actual next tick. Useful for verifying a competitor's
+ * pipeline end-to-end without sitting on your hands for hours.
+ */
+const DELAYED_RUN_SECONDS = 120;
+
+export async function runCompetitorInTwoMinutes(competitorId: string): Promise<CompetitorActionState> {
+  return runCompetitorAt(competitorId, DELAYED_RUN_SECONDS);
 }
 
 /**
