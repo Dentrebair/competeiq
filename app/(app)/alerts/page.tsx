@@ -92,9 +92,18 @@ function CollectionHealth({
   );
 }
 
-export default async function AlertsPage() {
+export default async function AlertsPage(props: PageProps<"/alerts">) {
   await requireUser();
   const supabase = await createClient();
+
+  // Deep-linked from a signal chip on the Competitors page
+  // (components/competitors/monitoring.tsx) — "what changed for THIS
+  // signal on THIS competitor" is the whole reason clicking one is useful.
+  const searchParams = await props.searchParams;
+  const initialCompetitor =
+    typeof searchParams.competitor === "string" ? searchParams.competitor : undefined;
+  const initialSignalType =
+    typeof searchParams.signal === "string" ? searchParams.signal : undefined;
 
   const [alertsResult, configsResult, competitorsResult] = await Promise.all([
     supabase
@@ -144,6 +153,8 @@ export default async function AlertsPage() {
           <AlertsTable
             initialAlerts={alerts}
             initialAnalyses={(analysisRows ?? []) as AlertAnalysis[]}
+            initialCompetitor={initialCompetitor}
+            initialSignalType={initialSignalType}
           />
         )}
       </div>

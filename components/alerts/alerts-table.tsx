@@ -9,6 +9,7 @@ import { TimeAgo } from "@/components/time-ago";
 import { LiveDot, SeverityChip, SignalTag, severityRail } from "@/components/ui/chips";
 import { EvidenceBody, InsightBlock, WhyItMatters } from "@/components/ui/insight-blocks";
 import { alertTitle, severityReason } from "@/lib/alert-title";
+import { signalTypeLabel } from "@/lib/signals";
 import { createClient } from "@/lib/supabase/client";
 import { normalizeSeverity, type Alert, type AlertAnalysis } from "@/lib/types/database";
 
@@ -143,9 +144,14 @@ function ExpandedRow({
 export function AlertsTable({
   initialAlerts,
   initialAnalyses,
+  initialCompetitor,
+  initialSignalType,
 }: {
   initialAlerts: Alert[];
   initialAnalyses: AlertAnalysis[];
+  /** Deep-linked from a signal chip on the Competitors page — see app/(app)/alerts/page.tsx. */
+  initialCompetitor?: string;
+  initialSignalType?: string;
 }) {
   const [alerts, setAlerts] = useState<Alert[]>(initialAlerts);
   const [analyses, setAnalyses] = useState<Map<number, AlertAnalysis>>(
@@ -154,7 +160,8 @@ export function AlertsTable({
   const [connection, setConnection] = useState<Connection>("connecting");
   const [tab, setTab] = useState<Tab>("unread");
   const [highImpactOnly, setHighImpactOnly] = useState(false);
-  const [competitor, setCompetitor] = useState("all");
+  const [competitor, setCompetitor] = useState(initialCompetitor ?? "all");
+  const [signalType, setSignalType] = useState(initialSignalType ?? "all");
   const [expanded, setExpanded] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   /** Live payloads we could not render. Surfaced, never silently dropped. */
@@ -231,6 +238,11 @@ export function AlertsTable({
     [alerts],
   );
 
+  const signalTypesPresent = useMemo(
+    () => [...new Set(alerts.map((a) => a.signal_type))].sort(),
+    [alerts],
+  );
+
   const counts = useMemo(
     () => ({
       unread: alerts.filter((a) => !a.is_read).length,
@@ -242,9 +254,10 @@ export function AlertsTable({
   const visible = useMemo(() => {
     let rows = alerts.filter((a) => (tab === "unread" ? !a.is_read : a.is_read));
     if (competitor !== "all") rows = rows.filter((a) => a.competitor_name === competitor);
+    if (signalType !== "all") rows = rows.filter((a) => a.signal_type === signalType);
     if (highImpactOnly) rows = rows.filter(isHighImpact);
     return rows;
-  }, [alerts, tab, competitor, highImpactOnly]);
+  }, [alerts, tab, competitor, signalType, highImpactOnly]);
 
   return (
     <div className="rounded-xl border border-border bg-surface shadow-[var(--shadow-card)]">
@@ -291,6 +304,37 @@ export function AlertsTable({
                 {competitorNames.map((name) => (
                   <option key={name} value={name}>
                     {name}
+                  </option>
+                ))}
+              </select>
+              <svg
+                aria-hidden
+                viewBox="0 0 16 16"
+                className="pointer-events-none absolute right-2.5 top-1/2 size-4 -translate-y-1/2 text-ink-faint"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="m4 6 4 4 4-4" />
+              </svg>
+            </label>
+          ) : null}
+
+          {signalTypesPresent.length > 1 ? (
+            <label className="relative inline-flex">
+              <span className="sr-only">Filter by signal</span>
+              <select
+                value={signalType}
+                onChange={(event) => setSignalType(event.target.value)}
+                className="appearance-none rounded-lg border border-border bg-surface py-1.5 pl-3 pr-8 text-base
+                           text-ink transition-colors hover:border-border-strong focus:border-accent focus:outline-none"
+              >
+                <option value="all">All signals</option>
+                {signalTypesPresent.map((type) => (
+                  <option key={type} value={type}>
+                    {signalTypeLabel(type)}
                   </option>
                 ))}
               </select>
@@ -357,8 +401,13 @@ export function AlertsTable({
 
       {visible.length === 0 ? (
         <p className="px-5 py-10 text-base text-ink-muted">
-          {competitor !== "all"
-            ? `Nothing here for ${competitor}. Switch to all competitors to see the rest.`
+          {competitor !== "all" || signalType !== "all"
+            ? `Nothing here for ${[
+                competitor !== "all" ? competitor : null,
+                signalType !== "all" ? signalTypeLabel(signalType) : null,
+              ]
+                .filter(Boolean)
+                .join(" · ")} in ${tab === "unread" ? "Needs attention" : "Read"}. Try the other tab, or clear a filter above.`
             : tab === "unread"
               ? highImpactOnly
                 ? "Nothing high-impact is waiting. Untick the filter to see everything."

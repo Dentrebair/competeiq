@@ -838,31 +838,53 @@ function CompetitorCard({
         <div className="flex items-center gap-1.5">
           <button
             type="button"
-            disabled={runPending || delayedActive || !competitor.active}
+            disabled={
+              scrapeActive
+                ? togglePending
+                : !competitor.active
+                  ? togglePending
+                  : runPending || delayedActive
+            }
             onClick={(event) => {
               event.stopPropagation();
-              onOpenRunNow();
+              // One button, three real states — not three fake ones. Which
+              // action a click takes depends on what's actually true right
+              // now (a run genuinely in flight, or the competitor genuinely
+              // paused), never on a separate "what was last clicked" flag.
+              if (scrapeActive) onToggleActive(); // running -> pause
+              else if (!competitor.active) onToggleActive(); // paused -> resume
+              else onOpenRunNow(); // idle -> open the signal picker
             }}
             title={
-              !competitor.active
-                ? "Competitor is paused"
-                : scrapeActive
-                  ? "A run is already in progress"
+              scrapeActive
+                ? "A run is in progress — pause to stop future scheduled runs"
+                : !competitor.active
+                  ? "Paused — click to resume monitoring"
                   : delayedActive
                     ? "A delayed run is already queued"
-                    : "Run a scrape now"
+                    : "Run now"
             }
-            className="grid size-9 place-items-center rounded-full border border-border text-ink-muted transition-all hover:border-border-strong hover:text-ink disabled:opacity-40"
+            className={`grid size-9 place-items-center rounded-full border transition-all hover:scale-105 disabled:opacity-40 ${
+              scrapeActive
+                ? "border-transparent bg-sev-critical-wash text-sev-critical"
+                : !competitor.active
+                  ? "border-border bg-surface-sunken text-ink-faint"
+                  : "border-border text-ink hover:border-border-strong"
+            }`}
           >
             {runPending ? (
               <span
                 aria-hidden
                 className="size-3.5 animate-spin rounded-full border-[1.5px] border-current border-t-transparent"
               />
+            ) : scrapeActive ? (
+              <PauseIcon />
             ) : (
               <RunIcon />
             )}
-            <span className="sr-only">Run now</span>
+            <span className="sr-only">
+              {scrapeActive ? "Pause monitoring" : !competitor.active ? "Resume monitoring" : "Run now"}
+            </span>
           </button>
 
           <button
@@ -879,7 +901,7 @@ function CompetitorCard({
                   ? "A delayed run is already queued"
                   : "Preview this competitor's schedule — run in ~2 minutes"
             }
-            className="grid size-9 place-items-center rounded-full border border-border text-ink-muted transition-all hover:border-border-strong hover:text-ink disabled:opacity-40"
+            className="grid size-9 place-items-center rounded-full border border-border text-ink transition-all hover:border-border-strong hover:bg-surface-sunken disabled:opacity-40 disabled:text-ink-muted"
           >
             {delayedPending ? (
               <span
@@ -890,26 +912,6 @@ function CompetitorCard({
               <ClockIcon />
             )}
             <span className="sr-only">Run in 2 minutes</span>
-          </button>
-
-          <button
-            type="button"
-            disabled={togglePending}
-            onClick={(event) => {
-              event.stopPropagation();
-              onToggleActive();
-            }}
-            title={competitor.active ? "Pause monitoring" : "Resume monitoring"}
-            className={`grid size-9 place-items-center rounded-full border transition-all hover:scale-105 disabled:opacity-40 ${
-              competitor.active
-                ? "border-transparent bg-sev-low-wash text-sev-low"
-                : "border-transparent bg-sev-critical-wash text-sev-critical"
-            }`}
-          >
-            <PauseIcon />
-            <span className="sr-only">
-              {competitor.active ? "Pause monitoring" : "Resume monitoring"}
-            </span>
           </button>
 
           <button
@@ -971,7 +973,15 @@ function CompetitorCard({
         {configs
           .filter((c) => c.enabled && isSignalLive(c.signal_type))
           .map((c) => (
-            <SignalTag key={c.signal_type} type={c.signal_type} badge className="text-xs" />
+            <Link
+              key={c.signal_type}
+              href={`/alerts?competitor=${encodeURIComponent(competitor.name)}&signal=${c.signal_type}`}
+              onClick={(event) => event.stopPropagation()}
+              title={`See ${SIGNAL_TYPE_LABELS[c.signal_type]} alerts for ${competitor.name}`}
+              className="transition-transform hover:scale-105"
+            >
+              <SignalTag type={c.signal_type} badge className="text-xs" />
+            </Link>
           ))}
       </div>
 
@@ -1346,9 +1356,11 @@ export function Monitoring({
               {selectedConfigs
                 .filter((c) => c.enabled && isSignalLive(c.signal_type))
                 .map((c) => (
-                  <span
+                  <Link
                     key={c.signal_type}
-                    className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface-sunken px-3 py-2"
+                    href={`/alerts?competitor=${encodeURIComponent(selected.name)}&signal=${c.signal_type}`}
+                    title={`See ${SIGNAL_TYPE_LABELS[c.signal_type]} alerts for ${selected.name}`}
+                    className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface-sunken px-3 py-2 transition-colors hover:border-border-strong"
                   >
                     <SignalTag
                       type={c.signal_type}
@@ -1357,7 +1369,7 @@ export function Monitoring({
                     <span className="text-sm text-ink-faint">
                       {cadenceLabel(c.frequency_hours)}
                     </span>
-                  </span>
+                  </Link>
                 ))}
               {SIGNAL_TYPES.filter((t) => !isSignalLive(t)).map((t) => (
                 <span
