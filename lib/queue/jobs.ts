@@ -54,8 +54,11 @@ interface JobDefinition {
 
 export const JOBS = {
   start_scrape: {
-    queue: { policy: "short", retryLimit: 2, retryDelay: 300, expireInSeconds: 300 },
-    work: { batchSize: 1, pollingIntervalSeconds: 10 },
+    queue: { policy: "short", retryLimit: 2, retryDelay: 300, retryBackoff: true, expireInSeconds: 300 },
+    // includeMetadata so the handler can read job.retryCount (worker/db.ts,
+    // scrape_runs.retry_count) — the plain Job type pg-boss otherwise hands
+    // a handler doesn't carry it, only JobWithMetadata does.
+    work: { batchSize: 1, pollingIntervalSeconds: 10, includeMetadata: true },
   },
   check_apify_run: {
     queue: { policy: "exclusive", retryLimit: 3, retryDelay: 300, expireInSeconds: 300 },

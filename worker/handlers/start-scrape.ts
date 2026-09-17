@@ -1,4 +1,4 @@
-import type { Job } from "pg-boss";
+import type { Job, JobWithMetadata } from "pg-boss";
 
 import type { JobData } from "@/lib/queue/jobs";
 import { requireEnv } from "@/lib/env";
@@ -22,14 +22,27 @@ const ACTOR_ID = "dsYHmuqeHvtR7NYxx";
 const CHECK_DELAY_SECONDS = 30 * 60;
 
 /**
+ * Ceiling passed to Apify itself for how long one run is allowed to take.
+ * Real observed runtimes for this actor are 10-15s (Apify console) — 5
+ * minutes is generous headroom for a slower catalog while still capping a
+ * genuinely hung run, which otherwise has no ceiling we control at all.
+ */
+const RUN_TIMEOUT_SECONDS = 300;
+
+/**
  * Start one Apify scrape for a competitor: run the Actor directly, record the
  * run so process_apify_run can resolve its competitor later, and schedule the
  * delayed backstop check in case the completion webhook is lost.
  */
 export async function startScrape(jobs: Job<JobData["start_scrape"]>[]): Promise<void> {
-  for (const job of jobs) {
+  // JobHandlers (lib/queue/jobs.ts) types every handler's parameter as the
+  // plain Job for shared simplicity; this job's work options set
+  // includeMetadata: true specifically so pg-boss actually hands it
+  // JobWithMetadata (retryCount and the rest) at runtime.
+  const withMetadata = jobs as unknown as JobWithMetadata<JobData["start_scrape"]>[];
+  for (const job of withMetadata) {
     try {
-      await runStartScrape(job.data.competitorId, job.data.signalTypes);
+      await runStartScrape(job.data.competitorId, job.data.signalTypes, job.retryCount);
     } catch (error) {
       logError("start_scrape_failed", error, { competitorId: job.data.competitorId });
       throw error;
@@ -37,7 +50,11 @@ export async function startScrape(jobs: Job<JobData["start_scrape"]>[]): Promise
   }
 }
 
-async function runStartScrape(competitorId: string, signalTypes?: string[]): Promise<void> {
+async function runStartScrape(
+  competitorId: string,
+  signalTypes?: string[],
+  retryCount?: number,
+): Promise<void> {
   const competitor = await getScrapeTarget(competitorId);
   if (!competitor) {
     throw new Error(`No active competitor ${competitorId} to scrape`);
@@ -48,10 +65,11 @@ async function runStartScrape(competitorId: string, signalTypes?: string[]): Pro
     name: competitor.name,
     url: competitor.url,
     signalTypes: signalTypes ?? "all",
+    retryCount: retryCount ?? 0,
   });
 
   const run = await startApifyRun(competitor.url);
-  await recordScrapeRun(run.id, competitor.id, signalTypes);
+  await recordScrapeRun(run.id, competitor.id, signalTypes, retryCount);
 
   log("start_scrape_run_created", { competitorId, runId: run.id });
 
@@ -83,7 +101,7 @@ async function startApifyRun(url: string): Promise<{ id: string }> {
   const webhooksParam = Buffer.from(JSON.stringify(webhooks)).toString("base64");
 
   const res = await fetch(
-    `${APIFY_API_URL}/acts/${ACTOR_ID}/runs?webhooks=${encodeURIComponent(webhooksParam)}`,
+    `${APIFY_API_URL}/acts/${ACTOR_ID}/runs?webhooks=${encodeURIComponent(webhooksParam)}&timeout=${RUN_TIMEOUT_SECONDS}`,
     {
       method: "POST",
       headers: {

@@ -101,7 +101,8 @@ async function processRun(job: Job<JobData["process_apify_run"]>): Promise<void>
       baselineHistory: baselineHistoryRows(products, baseline, competitor.id, runId),
     });
 
-    await updateScrapeRunStatus(runId, "succeeded");
+    // run.defaultDatasetId is confirmed non-null above (line 65-67).
+    await updateScrapeRunStatus(runId, "succeeded", undefined, run.defaultDatasetId);
     log("process_apify_run_succeeded", { runId, competitorId: competitor.id, alertCount: alerts.length });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

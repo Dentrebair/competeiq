@@ -64,7 +64,7 @@ describe("startScrape", () => {
       proxyConfiguration: { useApifyProxy: true, apifyProxyGroups: ["RESIDENTIAL"] },
     });
 
-    expect(db.recordScrapeRun).toHaveBeenCalledWith("run-abc", "comp-1", undefined);
+    expect(db.recordScrapeRun).toHaveBeenCalledWith("run-abc", "comp-1", undefined, undefined);
 
     expect(queueClient.enqueueFromWorker).toHaveBeenCalledWith(
       "check_apify_run",
@@ -82,10 +82,22 @@ describe("startScrape", () => {
       } as Job<JobData["start_scrape"]>,
     ]);
 
-    expect(db.recordScrapeRun).toHaveBeenCalledWith("run-def", "comp-1", [
-      "sku_price_change",
-      "promo_discount",
+    expect(db.recordScrapeRun).toHaveBeenCalledWith(
+      "run-def",
+      "comp-1",
+      ["sku_price_change", "promo_discount"],
+      undefined,
+    );
+  });
+
+  it("passes the job's pg-boss retry count through to recordScrapeRun", async () => {
+    mockApifyRunStart({ runId: "run-ghi" });
+
+    await startScrape([
+      { data: { competitorId: "comp-1" }, retryCount: 2 } as unknown as Job<JobData["start_scrape"]>,
     ]);
+
+    expect(db.recordScrapeRun).toHaveBeenCalledWith("run-ghi", "comp-1", undefined, 2);
   });
 
   it("sends the webhook secret only in the headers template, never the URL", async () => {

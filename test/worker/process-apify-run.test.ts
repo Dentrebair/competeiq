@@ -100,7 +100,7 @@ describe("processApifyRun", () => {
       expect.objectContaining({ product_handle: "widget", was_new: false, previous_price: 10, current_price: 20 }),
     ]);
     expect(db.updateScrapeRunStatus).toHaveBeenCalledWith("run-1", "processing");
-    expect(db.updateScrapeRunStatus).toHaveBeenCalledWith("run-1", "succeeded");
+    expect(db.updateScrapeRunStatus).toHaveBeenCalledWith("run-1", "succeeded", undefined, "ds-1");
   });
 
   it("writes an unclassified alert when Claude fails on every retry", async () => {

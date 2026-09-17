@@ -82,17 +82,23 @@ export async function getCompetitorForRun(runId: string): Promise<CompetitorForR
   return { id: row.id, name: row.name, requestedSignals: row.requested_signals };
 }
 
-/** Written by start_scrape the moment it starts an Apify run. */
+/**
+ * Written by start_scrape the moment it starts an Apify run. `retryCount` is
+ * pg-boss's own count of how many times the start_scrape job was retried
+ * before this attempt succeeded (Job.retryCount, read by the handler) — 0
+ * for a run that started on the first try.
+ */
 export async function recordScrapeRun(
   runId: string,
   competitorId: string,
   requestedSignals?: string[],
+  retryCount?: number,
 ): Promise<void> {
   const db = getPipelineDb();
   await db.query(
-    `insert into public.scrape_runs (run_id, competitor_id, requested_signals) values ($1, $2, $3)
+    `insert into public.scrape_runs (run_id, competitor_id, requested_signals, retry_count) values ($1, $2, $3, $4)
      on conflict (run_id) do nothing`,
-    [runId, competitorId, requestedSignals ?? null],
+    [runId, competitorId, requestedSignals ?? null, retryCount ?? 0],
   );
 }
 
@@ -102,16 +108,33 @@ export type ScrapeRunStatus = "running" | "processing" | "succeeded" | "failed";
  * Progress the run's status so the UI (Realtime on scrape_runs) can show what
  * "Run Now" is doing. `error` is only meaningful for 'failed' — cleared
  * otherwise so a retry's success doesn't leave a stale message behind.
+ *
+ * `datasetId` is only ever passed on 'succeeded' (process_apify_run already
+ * has it in hand from fetching the run) — persisted so "what did this run
+ * actually see" doesn't require Apify to still have the run around later.
+ *
+ * `completed_at` is set exactly once, only on a terminal status
+ * (succeeded/failed) — never on 'processing', so it stays a clean "when did
+ * this actually finish" value distinct from `updated_at`, which moves on
+ * every intermediate step too.
  */
 export async function updateScrapeRunStatus(
   runId: string,
   status: ScrapeRunStatus,
   error?: string,
+  datasetId?: string,
 ): Promise<void> {
   const db = getPipelineDb();
+  const terminal = status === "succeeded" || status === "failed";
   await db.query(
-    `update public.scrape_runs set status = $2, error = $3, updated_at = now() where run_id = $1`,
-    [runId, status, error ?? null],
+    `update public.scrape_runs
+        set status = $2,
+            error = $3,
+            dataset_id = coalesce($4, dataset_id),
+            completed_at = case when $5 then now() else completed_at end,
+            updated_at = now()
+      where run_id = $1`,
+    [runId, status, error ?? null, datasetId ?? null, terminal],
   );
 }
 
