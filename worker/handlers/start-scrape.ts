@@ -81,19 +81,15 @@ async function runStartScrape(
 }
 
 /**
- * Verified against the actor (`GET /v2/acts/dsYHmuqeHvtR7NYxx`) and the ad-hoc
- * webhook mechanism (Apify docs: `webhooks` query param, base64-encoded JSON
- * array of {eventTypes, requestUrl, payloadTemplate, headersTemplate}).
+ * `/v2/actors/{actorId}/runs` (plural) — the documented current endpoint
+ * (docs.apify.com/api/v2/actors-runs-post). The old `/v2/acts/` form worked
+ * (a legacy alias from before Apify renamed "acts" to "actors") but wasn't
+ * the documented path; switched to match every other Apify call in this
+ * codebase, all of which use the current, confirmed endpoints.
  *
- * NOTE: Apify's current docs (docs.apify.com/api/v2/actors-runs-post) only
- * document `/v2/actors/{actorId}/runs` (plural) for starting a run — `/v2/acts/`
- * isn't mentioned there. This is demonstrably still working (real successful
- * runs in the Apify console), so it's very likely a still-functional legacy
- * alias from before Apify renamed "acts" to "actors" — but unlike the GET
- * endpoints (fixed to /v2/actor-runs/ elsewhere in this codebase, confirmed
- * current), this write endpoint hasn't been switched, since it's the
- * critical path that actually starts a scrape and deserves a deliberate
- * decision rather than a drive-by change alongside a read-only status fix.
+ * Webhook mechanism verified separately (Apify docs: `webhooks` query
+ * param, base64-encoded JSON array of {eventTypes, requestUrl,
+ * payloadTemplate, headersTemplate}).
  */
 async function startApifyRun(url: string): Promise<{ id: string }> {
   // Trailing slash on APP_URL (easy to paste in as-is from a browser address
@@ -111,7 +107,7 @@ async function startApifyRun(url: string): Promise<{ id: string }> {
   const webhooksParam = Buffer.from(JSON.stringify(webhooks)).toString("base64");
 
   const res = await fetch(
-    `${APIFY_API_URL}/acts/${ACTOR_ID}/runs?webhooks=${encodeURIComponent(webhooksParam)}&timeout=${RUN_TIMEOUT_SECONDS}`,
+    `${APIFY_API_URL}/actors/${ACTOR_ID}/runs?webhooks=${encodeURIComponent(webhooksParam)}&timeout=${RUN_TIMEOUT_SECONDS}`,
     {
       method: "POST",
       headers: {

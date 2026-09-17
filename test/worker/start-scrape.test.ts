@@ -31,7 +31,7 @@ function jobFor(competitorId: string): Job<JobData["start_scrape"]>[] {
 function mockApifyRunStart(opts: { ok?: boolean; runId?: string } = {}) {
   const { ok = true, runId = "run-new" } = opts;
   const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
-    expect(url).toContain("/acts/dsYHmuqeHvtR7NYxx/runs?webhooks=");
+    expect(url).toContain("/actors/dsYHmuqeHvtR7NYxx/runs?webhooks=");
     expect(init?.method).toBe("POST");
     if (!ok) return new Response("boom", { status: 500, statusText: "Internal Error" });
     return new Response(JSON.stringify({ data: { id: runId } }), { status: 201 });
