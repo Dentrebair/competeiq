@@ -936,11 +936,13 @@ function CompetitorCard({
 function RunNowModal({
   competitor,
   pending,
+  error,
   onCancel,
   onConfirm,
 }: {
   competitor: CompetitorRow;
   pending: boolean;
+  error: string | null;
   onCancel: () => void;
   onConfirm: (signalTypes: SignalType[]) => void;
 }) {
@@ -987,6 +989,15 @@ function RunNowModal({
         <p className="mt-2 text-base text-ink-muted">
           Choose which signals to check for on this run.
         </p>
+
+        {error ? (
+          <p
+            role="status"
+            className="mt-4 rounded-lg bg-sev-high-wash px-3 py-2 text-base text-sev-high"
+          >
+            {error}
+          </p>
+        ) : null}
 
         <div className="mt-4 flex flex-col gap-2">
           {selectable.length === 0 ? (
@@ -1332,7 +1343,10 @@ export function Monitoring({
                 selected={selected?.id === competitor.id}
                 onSelect={() => setSelectedId(competitor.id)}
                 onToggleActive={() => toggleActive(competitor)}
-                onOpenRunNow={() => setRunNowModalId(competitor.id)}
+                onOpenRunNow={() => {
+                  setNotice(null);
+                  setRunNowModalId(competitor.id);
+                }}
                 onDelete={() => setConfirmDeleteId(competitor.id)}
                 togglingId={togglingId}
                 runningId={runningId}
@@ -1347,6 +1361,7 @@ export function Monitoring({
         <RunNowModal
           competitor={competitorForRunNow}
           pending={confirmingRun}
+          error={notice}
           onCancel={() => setRunNowModalId(null)}
           onConfirm={(signalTypes) => runNow(competitorForRunNow.id, signalTypes)}
         />
