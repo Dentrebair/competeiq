@@ -154,11 +154,10 @@ export interface StaleRunRow {
 
 /**
  * Rows stuck in running/processing well past how long a real run has ever
- * taken (worker/handlers/sweep-stale-runs.ts) — the case where
- * check_apify_run's own reschedule chain broke and nothing ever resolved
- * them. `olderThanMinutes` is deliberately small: real runs finish in
- * seconds, so there is no "still legitimately working" case this threshold
- * needs to protect against.
+ * taken (worker/handlers/sweep-stale-runs.ts) — the case where a lost
+ * completion webhook never got resolved. `olderThanMinutes` is deliberately
+ * small: real runs finish in seconds, so there is no "still legitimately
+ * working" case this threshold needs to protect against.
  */
 export async function getStaleRuns(olderThanMinutes: number): Promise<StaleRunRow[]> {
   const db = getPipelineDb();

@@ -5,7 +5,6 @@ import { requireEnv } from "@/lib/env";
 import { FREE_TIER_MAX_PRODUCTS_PER_COMPETITOR } from "@/lib/tier";
 import { log, logError } from "../log";
 import { getScrapeTarget, recordScrapeRun } from "../db";
-import { enqueueFromWorker } from "../queue-client";
 
 const APIFY_API_URL = "https://api.apify.com/v2";
 
@@ -18,9 +17,6 @@ const APIFY_API_URL = "https://api.apify.com/v2";
  */
 const ACTOR_ID = "dsYHmuqeHvtR7NYxx";
 
-/** How long after starting a run the backstop check looks for completion (ADR-0005). */
-const CHECK_DELAY_SECONDS = 30 * 60;
-
 /**
  * Ceiling passed to Apify itself for how long one run is allowed to take.
  * Real observed runtimes for this actor are 10-15s (Apify console) — 5
@@ -30,9 +26,14 @@ const CHECK_DELAY_SECONDS = 30 * 60;
 const RUN_TIMEOUT_SECONDS = 300;
 
 /**
- * Start one Apify scrape for a competitor: run the Actor directly, record the
- * run so process_apify_run can resolve its competitor later, and schedule the
- * delayed backstop check in case the completion webhook is lost.
+ * Start one Apify scrape for a competitor: run the Actor directly and record
+ * the run so process_apify_run can resolve its competitor later. A lost
+ * completion webhook is caught by the independent stale-run sweep
+ * (worker/handlers/sweep-stale-runs.ts), not by a per-run backstop chain
+ * scheduled from here — see git history for the removed check_apify_run,
+ * which the sweep made fully redundant while also being strictly faster
+ * (minutes instead of 30) and immune to the reschedule-chain failures that
+ * job could hit.
  */
 export async function startScrape(jobs: Job<JobData["start_scrape"]>[]): Promise<void> {
   // JobHandlers (lib/queue/jobs.ts) types every handler's parameter as the
@@ -72,12 +73,6 @@ async function runStartScrape(
   await recordScrapeRun(run.id, competitor.id, signalTypes, retryCount);
 
   log("start_scrape_run_created", { competitorId, runId: run.id });
-
-  await enqueueFromWorker(
-    "check_apify_run",
-    { runId: run.id, competitorId: competitor.id },
-    { singletonKey: run.id, startAfter: CHECK_DELAY_SECONDS },
-  );
 }
 
 /**

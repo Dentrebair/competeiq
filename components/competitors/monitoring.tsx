@@ -265,9 +265,9 @@ function formatCountdown(remainingMs: number): string {
  * Live status for one competitor's most recent scrape run — what "Run Now"
  * actually did, not just whether the click succeeded. Seeded from the
  * server-rendered row, then kept current over Realtime (supabase/11): a
- * fresh start_scrape INSERTs the row, and process_apify_run /
- * check_apify_run UPDATE it as the run moves through running -> processing ->
- * succeeded/failed.
+ * fresh start_scrape INSERTs the row, and process_apify_run (or the
+ * stale-run sweep, on a lost webhook) UPDATEs it as the run moves through
+ * running -> processing -> succeeded/failed.
  *
  * Pulled out of RunProgress so the run's live status can drive more than one
  * piece of UI — the progress bar AND the Run Now button's disabled/spinner

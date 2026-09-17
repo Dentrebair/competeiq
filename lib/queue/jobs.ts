@@ -28,18 +28,18 @@ export interface JobData {
    * evaluated, same as before this field existed.
    */
   start_scrape: { competitorId: string; signalTypes?: SignalType[] };
-  /** The backstop for a lost webhook: look at a run about 30 minutes after it started. */
-  check_apify_run: { runId: string; competitorId: string };
   /** Turn one finished Collection Run into Alerts and a new Baseline. */
   process_apify_run: { runId: string };
   /** Fill in the digest row the app locked. */
   generate_digest: { digestId: string };
   /**
-   * The backstop for the backstop: a fixed, always-on sweep (not
-   * per-competitor, never enqueued by the app) that catches any scrape_runs
-   * row stuck in running/processing well past how long a real run has ever
-   * taken — the case where check_apify_run's own reschedule chain broke
-   * (worker restart, exhausted retries, or Apify itself never resolving).
+   * The backstop for a lost completion webhook. Fixed, always-on (scheduled
+   * once at worker startup, not per-competitor, never enqueued by the app) —
+   * catches any scrape_runs row stuck in running/processing well past how
+   * long a real run has ever taken. Replaced a per-run check_apify_run job
+   * that polled once 30 minutes after each run and rescheduled itself every
+   * 5 minutes until resolved (removed — this sweep resolves the same cases
+   * in minutes instead of 30, and has no reschedule chain that can break).
    * No payload: it queries the database for whatever is stale right now.
    */
   sweep_stale_runs: Record<string, never>;
@@ -59,10 +59,6 @@ export const JOBS = {
     // scrape_runs.retry_count) — the plain Job type pg-boss otherwise hands
     // a handler doesn't carry it, only JobWithMetadata does.
     work: { batchSize: 1, pollingIntervalSeconds: 10, includeMetadata: true },
-  },
-  check_apify_run: {
-    queue: { policy: "exclusive", retryLimit: 3, retryDelay: 300, expireInSeconds: 300 },
-    work: { batchSize: 1, pollingIntervalSeconds: 30 },
   },
   process_apify_run: {
     queue: {

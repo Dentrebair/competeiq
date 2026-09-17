@@ -26,11 +26,13 @@ const MAX_APIFY_CHECK_ATTEMPTS = 3;
 const APIFY_CHECK_RETRY_DELAY_MS = 10_000;
 
 /**
- * The backstop for the backstop. Fixed, always-on (scheduled once at worker
- * startup, not per-competitor — see worker/queue.ts), independent of
- * check_apify_run's own reschedule chain entirely: it doesn't matter whether
- * that chain is healthy, expired, or exhausted its retries, because this
- * just asks "what does the database say right now?" on its own clock.
+ * The backstop for a lost completion webhook. Fixed, always-on (scheduled
+ * once at worker startup, not per-competitor — see worker/queue.ts).
+ * Replaced a per-run check_apify_run job that polled 30 minutes after each
+ * run and rescheduled itself every 5 minutes until resolved — removed, since
+ * this sweep resolves the same cases in minutes instead of 30, running on
+ * its own independent clock with no per-run reschedule chain that can break
+ * (worker restart, exhausted retries, or Apify never resolving cleanly).
  *
  * For every stale row found, resolves it by asking Apify directly what
  * actually happened, and classifies the outcome into exactly one of three
@@ -121,9 +123,8 @@ async function resolveStaleRun(runId: string, competitorId: string): Promise<voi
 
   // Still READY/RUNNING/TIMING-OUT/ABORTING (or a genuinely unexpected
   // value) well past any real run's duration — the hang is on Apify's
-  // side, not in our own pipeline. Deliberately resolved now rather than
-  // waiting for check_apify_run's own 30-minute-later first look — nothing
-  // real takes this long for this actor.
+  // side, not in our own pipeline. Nothing real takes this long for this
+  // actor, so there's no earlier check to wait for.
   await updateScrapeRunStatus(
     runId,
     "failed",

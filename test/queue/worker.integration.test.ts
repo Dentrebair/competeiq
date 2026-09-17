@@ -48,10 +48,10 @@ describe.skipIf(!WORKER_URL || !INTAKE_URL || !ADMIN_URL)("worker queue", () => 
       "select name, policy from pgboss.queue where name not like '\\_\\_%' order by name",
     );
     expect(rows).toEqual([
-      { name: "check_apify_run", policy: "exclusive" },
       { name: "generate_digest", policy: "exclusive" },
       { name: "process_apify_run", policy: "exclusive" },
       { name: "start_scrape", policy: "short" },
+      { name: "sweep_stale_runs", policy: "exclusive" },
     ]);
   }, 60_000);
 

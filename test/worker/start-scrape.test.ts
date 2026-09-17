@@ -5,8 +5,10 @@ import type { JobData } from "@/lib/queue/jobs";
 import { FREE_TIER_MAX_PRODUCTS_PER_COMPETITOR } from "@/lib/tier";
 
 /**
- * start_scrape against a mocked Apify API, the database and the worker's
- * internal enqueue client — no network, no Postgres.
+ * start_scrape against a mocked Apify API and the database — no network, no
+ * Postgres. A lost completion webhook is caught by the independent
+ * stale-run sweep, not by anything start_scrape itself schedules, so this
+ * file has no queue-client mock to set up.
  */
 
 const db = vi.hoisted(() => ({
@@ -14,11 +16,6 @@ const db = vi.hoisted(() => ({
   recordScrapeRun: vi.fn(),
 }));
 vi.mock("@/worker/db", () => db);
-
-const queueClient = vi.hoisted(() => ({
-  enqueueFromWorker: vi.fn(),
-}));
-vi.mock("@/worker/queue-client", () => queueClient);
 
 const { startScrape } = await import("@/worker/handlers/start-scrape");
 
@@ -47,11 +44,10 @@ beforeEach(() => {
   process.env.APIFY_WEBHOOK_SECRET = "test-secret";
   db.getScrapeTarget.mockResolvedValue(COMPETITOR);
   db.recordScrapeRun.mockResolvedValue(undefined);
-  queueClient.enqueueFromWorker.mockResolvedValue("job-id");
 });
 
 describe("startScrape", () => {
-  it("starts the Actor with the competitor's URL, records the run, and schedules the backstop check", async () => {
+  it("starts the Actor with the competitor's URL and records the run", async () => {
     const fetchMock = mockApifyRunStart({ runId: "run-abc" });
 
     await startScrape(jobFor("comp-1"));
@@ -65,12 +61,6 @@ describe("startScrape", () => {
     });
 
     expect(db.recordScrapeRun).toHaveBeenCalledWith("run-abc", "comp-1", undefined, undefined);
-
-    expect(queueClient.enqueueFromWorker).toHaveBeenCalledWith(
-      "check_apify_run",
-      { runId: "run-abc", competitorId: "comp-1" },
-      { singletonKey: "run-abc", startAfter: 1800 },
-    );
   });
 
   it("passes a Run Now signal selection through to recordScrapeRun", async () => {
@@ -136,7 +126,6 @@ describe("startScrape", () => {
 
     await expect(startScrape(jobFor("missing"))).rejects.toThrow(/No active competitor/);
     expect(db.recordScrapeRun).not.toHaveBeenCalled();
-    expect(queueClient.enqueueFromWorker).not.toHaveBeenCalled();
   });
 
   it("throws and never records a run when Apify rejects the start request", async () => {
@@ -144,6 +133,5 @@ describe("startScrape", () => {
 
     await expect(startScrape(jobFor("comp-1"))).rejects.toThrow(/Failed to start Apify run/);
     expect(db.recordScrapeRun).not.toHaveBeenCalled();
-    expect(queueClient.enqueueFromWorker).not.toHaveBeenCalled();
   });
 });

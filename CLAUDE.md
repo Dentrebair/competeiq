@@ -65,13 +65,24 @@ the webhook body.
 ### Worker jobs (`lib/queue/jobs.ts`, handlers in `worker/handlers/`)
 - `start_scrape` — runs the Shopify scraper Actor for one competitor. Fired by
   that competitor's pg-boss schedule, or by Run Now (`runCompetitorNow()`).
-- `check_apify_run` — the delayed backstop (~30 min after start) for a lost
-  completion webhook. Polls Apify; on SUCCEEDED enqueues processor, on RUNNING
-  reschedules itself for ~5 min, on FAILED/ABORTED logs and skips.
 - `process_apify_run` — diffs the run against the Baseline, calls Claude Haiku,
   writes alerts + Baseline in one transaction.
 - `generate_digest` — Claude Opus with thinking on, `effort: high`, structured
   output via `jsonSchemaOutputFormat()`. Can run for minutes.
+- `sweep_stale_runs` — the backstop for a lost completion webhook. Fixed,
+  always-on schedule (once per minute, set up by the worker itself at
+  startup — not per-competitor, never enqueued by the app). Finds any
+  `scrape_runs` row stuck in `running`/`processing` for more than 3 minutes
+  (real runs finish in seconds), re-polls Apify directly, and resolves it:
+  hands a recovered SUCCEEDED to `process_apify_run`, or writes `failed`
+  with a specific `apify_status` (`FAILED`/`TIMED-OUT`/`ABORTED` verbatim
+  from Apify, or `UNREACHABLE`/`HUNG` for a failure Apify never confirmed).
+  Replaced an earlier `check_apify_run` job that polled once 30 minutes
+  after each run and rescheduled itself every 5 minutes until resolved —
+  removed once this sweep made it fully redundant while resolving the same
+  cases in minutes instead of 30, with no per-run reschedule chain that can
+  break (a worker restart, exhausted retries, or Apify never resolving
+  cleanly all silently broke that chain in production before this existed).
 
 Consequence for the UI, and it is not optional: **login must never block on the
 digest.** The page loads the alert feed from Supabase immediately and renders the
@@ -270,10 +281,10 @@ migration).
 
 **Working, verified against a real Apify run:** login, `proxy.ts` auth gate,
 alert feed over Realtime, competitor management (add/pause/resume/sync/**delete**
-all reconcile a real pg-boss schedule, not a dead webhook call), all four
-worker jobs (`start_scrape`, `check_apify_run`, `process_apify_run`,
-`generate_digest`), the webhook route (`/api/webhooks/apify`), the
-run→competitor lookup (`scrape_runs`), migrations 00→11.
+all reconcile a real pg-boss schedule, not a dead webhook call), all worker
+jobs (`start_scrape`, `process_apify_run`, `generate_digest`, `sweep_stale_runs`),
+the webhook route (`/api/webhooks/apify`), the run→competitor lookup
+(`scrape_runs`), migrations 00→11.
 
 **Confirmed working end-to-end (2026-09-15):** a real competitor
 (deathwishcoffee.com) went through the full chain — Run Now → `start_scrape` →
@@ -295,7 +306,7 @@ Shopify store — proof the pipeline distinguishes a real scrape failure from
 - Hard delete (`deleteCompetitor()`), two-click confirm, clears the schedule
   before the row delete.
 - Structured JSON logs (`console.error`/`log()`) added at every stage of
-  `start_scrape` / `check_apify_run` / `process_apify_run` and every app
+  `start_scrape` / `process_apify_run` / `sweep_stale_runs` and every app
   action's failure path, specifically so a Railway log search on `event` can
   answer "what did Run Now actually do" without guessing.
 

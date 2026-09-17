@@ -5,8 +5,9 @@ import { databaseConnection } from "@/lib/queue/connection";
 import type { JobData, JobName } from "@/lib/queue/jobs";
 
 /**
- * The worker's own way to enqueue a job from inside a handler — e.g.
- * start_scrape scheduling check_apify_run ~30 minutes out.
+ * The worker's own way to enqueue a job from inside a handler — e.g. the
+ * stale-run sweep handing a recovered success to process_apify_run
+ * (worker/handlers/sweep-stale-runs.ts).
  *
  * A second, lightweight PgBoss client, same shape as lib/queue/intake.ts but
  * for pipeline_worker instead of pipeline_intake. Not the `boss` instance
