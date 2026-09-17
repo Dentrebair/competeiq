@@ -18,6 +18,7 @@ import { TimeAgo } from "@/components/time-ago";
 import { SignalIcon, SignalTag } from "@/components/ui/chips";
 import { createClient } from "@/lib/supabase/client";
 import { SIGNAL_TYPES, SIGNAL_TYPE_LABELS, isSignalLive, type SignalType } from "@/lib/signals";
+import { fastestEnabledFrequency } from "@/lib/scheduling";
 import { FREE_TIER_CADENCE_HOURS } from "@/lib/tier";
 import type { Alert, Competitor, CompetitorSuggestion, ScrapeRun, SignalConfig } from "@/lib/types/database";
 
@@ -221,6 +222,43 @@ function runStageColor(status: ScrapeRun["status"]): { bar: string; text: string
     case "failed":
       return { bar: "bg-sev-critical", text: "text-sev-critical" };
   }
+}
+
+/**
+ * The competitor's own cadence, exactly as the real schedule computes it
+ * (lib/scheduling.ts, reused directly — not reimplemented) — the fastest
+ * enabled live signal, clamped to the free-tier weekly floor once the
+ * pipeline is live. Null means no schedule exists at all (nothing enabled).
+ */
+function effectiveCadenceHours(configs: SignalConfig[], pipelineLive: boolean): number | null {
+  const fastest = fastestEnabledFrequency(
+    configs.map((c) => ({ signal_type: c.signal_type, frequency_hours: c.frequency_hours, enabled: c.enabled })),
+  );
+  if (fastest === null) return null;
+  return pipelineLive ? Math.max(fastest, FREE_TIER_CADENCE_HOURS) : fastest;
+}
+
+/** Ticks every second — cheap at free-tier's competitor count, and the only way "40:23" actually counts down. */
+function useNow(enabled: boolean): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!enabled) return;
+    const interval = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, [enabled]);
+  return now;
+}
+
+function formatCountdown(remainingMs: number): string {
+  const totalSeconds = Math.max(0, Math.floor(remainingMs / 1000));
+  const days = Math.floor(totalSeconds / 86_400);
+  const hours = Math.floor((totalSeconds % 86_400) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (days > 0) return `${days}d ${hours}h`;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
 }
 
 /**
@@ -707,6 +745,7 @@ function CompetitorCard({
   onDelete,
   togglingId,
   runningId,
+  pipelineLive,
 }: {
   competitor: CompetitorRow;
   selected: boolean;
@@ -717,6 +756,7 @@ function CompetitorCard({
   onDelete: () => void;
   togglingId: string | null;
   runningId: string | null;
+  pipelineLive: boolean;
 }) {
   const configs = useLiveSignalConfigs(competitor.id, competitor.configs);
   const enabledCount = configs.filter((c) => c.enabled && isSignalLive(c.signal_type)).length;
@@ -724,6 +764,17 @@ function CompetitorCard({
   const run = useLiveScrapeRun(competitor.id, competitor.latestRun);
   const scrapeActive = isRunActive(run);
   const runPending = runningId === competitor.id || scrapeActive;
+
+  // Next scheduled run countdown — purely derived, ticks live. Null in any
+  // case where no schedule will actually fire: paused, or nothing enabled.
+  const cadenceHours = effectiveCadenceHours(configs, pipelineLive);
+  const lastRunAt = run ? new Date(run.started_at).getTime() : null;
+  const nextRunAt =
+    competitor.active && cadenceHours !== null && lastRunAt !== null
+      ? lastRunAt + cadenceHours * 3_600_000
+      : null;
+  const now = useNow(nextRunAt !== null && !scrapeActive);
+  const remainingMs = nextRunAt !== null ? nextRunAt - now : null;
   const togglePending = togglingId === competitor.id;
 
   return (
@@ -817,6 +868,19 @@ function CompetitorCard({
       <div className="mt-2">
         <RunProgress run={run} />
       </div>
+
+      {!scrapeActive && remainingMs !== null ? (
+        <p className="mt-1.5 text-sm text-ink-faint">
+          {remainingMs <= 0 ? (
+            "Next check due any moment"
+          ) : (
+            <>
+              Next check in{" "}
+              <span className="tabular font-medium text-ink-muted">{formatCountdown(remainingMs)}</span>
+            </>
+          )}
+        </p>
+      ) : null}
 
       <div className="mt-3.5 flex flex-wrap gap-1.5">
         {configs
@@ -1272,6 +1336,7 @@ export function Monitoring({
                 onDelete={() => setConfirmDeleteId(competitor.id)}
                 togglingId={togglingId}
                 runningId={runningId}
+                pipelineLive={pipelineLive}
               />
             ))}
           </div>
