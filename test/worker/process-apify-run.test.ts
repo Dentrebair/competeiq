@@ -173,4 +173,25 @@ describe("processApifyRun", () => {
     // Baseline still gets recorded even with no signal fired.
     expect(db.persistProcessedRun.mock.calls[0][0].baseline).toHaveLength(1);
   });
+
+  it("writes a baseline-established alert on a competitor's first run, without touching the parity-tested diff branches", async () => {
+    // Default beforeEach baseline is already [] — a genuine first run.
+    mockApify({ products: [PRICE_CHANGE_PRODUCT] });
+    claudeReply('{"summary":"First look at this competitor.","impact":"Baseline for future comparisons.","recommended_action":"None needed yet."}');
+
+    await processApifyRun(jobFor("run-8"));
+
+    expect(db.persistProcessedRun).toHaveBeenCalledTimes(1);
+    const call = db.persistProcessedRun.mock.calls[0][0];
+    expect(call.alerts).toHaveLength(1);
+    expect(call.alerts[0]).toMatchObject({
+      signal_type: "catalog_change",
+      summary: "First look at this competitor.",
+    });
+    // The prompt sent to Claude must say this is a baseline, not a change —
+    // never the normal "products added" wording real diffs get.
+    const prompt = mockCreate.mock.calls[0][0].messages[0].content as string;
+    expect(prompt).toContain("FIRST time");
+    expect(prompt).not.toContain("products added and");
+  });
 });

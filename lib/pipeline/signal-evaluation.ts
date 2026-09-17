@@ -84,6 +84,13 @@ export interface DetectedChange {
   added_titles?: string;
   /** Inventory status only — the new state, after the flip. */
   in_stock?: boolean;
+  /**
+   * Set only by firstRunSummary — never by diffPrice/diffCatalog/diffPromo/
+   * diffInventory (WF-02 parity, untouched). Distinguishes "here's what we
+   * found" from "here's what changed" so interpretationRequest doesn't
+   * describe a first-ever observation as if it were a competitive move.
+   */
+  is_baseline?: boolean;
 }
 
 /** The words Claude writes. Signal type and severity are never taken from it (ADR-0006). */
@@ -174,6 +181,44 @@ export function evaluateSignals(
   if (!allowedSignals) return changes;
   const allowed = new Set<string>(allowedSignals);
   return changes.filter((change) => allowed.has(change.signal_type));
+}
+
+/**
+ * Deliberately NOT called from evaluateSignals, and outside the WF-02 parity
+ * boundary — WF-02 never produced anything for a first run (an empty
+ * Baseline correctly makes diffPrice/diffCatalog/diffInventory return []),
+ * and that stays exactly as it was. This is new product behavior: the
+ * caller (process-apify-run.ts) invokes it separately, only once it already
+ * knows this is a competitor's first-ever run, and adds its result
+ * alongside evaluateSignals's own (still correctly near-empty) output —
+ * so an operator gets "here's what we found" after their first Run Now
+ * instead of silence, without touching a single parity-tested diff branch.
+ */
+export function firstRunSummary(products: ApifyProduct[], competitor: CompetitorRef): DetectedChange[] {
+  if (products.length === 0) return [];
+
+  const titles = products
+    .map((product) => product.title)
+    .filter((title): title is string => Boolean(title));
+
+  return [
+    {
+      signal_type: "catalog_change",
+      product_title: `Baseline established — ${products.length} product${products.length === 1 ? "" : "s"} tracked`,
+      product_handle: null,
+      product_url: null,
+      currency: null,
+      added_count: products.length,
+      removed_count: 0,
+      added_titles: titles.slice(0, 5).join(", "),
+      previous_price: null,
+      current_price: null,
+      delta_pct: null,
+      competitor_name: competitor.name,
+      competitor_id: competitor.id,
+      is_baseline: true,
+    },
+  ];
 }
 
 function diffPrice(
@@ -356,7 +401,9 @@ function diffInventory(
 export function interpretationRequest(change: DetectedChange) {
   const detail = {
     sku_price_change: `Product "${change.product_title}" price changed ${change.delta_pct}% from ${change.previous_price} to ${change.current_price}`,
-    catalog_change: `${change.added_count} products added and ${change.removed_count} products removed. New items include: ${change.added_titles || "unknown"}`,
+    catalog_change: change.is_baseline
+      ? `This is the FIRST time this competitor has been scraped — there is no prior data to compare against. ${change.added_count} products currently listed, not "added": ${change.added_titles || "unknown"}. Describe this as establishing a baseline, not as a competitive move — nothing has actually changed yet.`
+      : `${change.added_count} products added and ${change.removed_count} products removed. New items include: ${change.added_titles || "unknown"}`,
     promo_discount: `"${change.product_title}" is now ${Math.abs(change.delta_pct ?? 0)}% off. Was ${change.previous_price}, now ${change.current_price}`,
     inventory_status: `Product "${change.product_title}" is now ${change.in_stock ? "back in stock" : "out of stock"}`,
   }[change.signal_type];

@@ -4,6 +4,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { JobData } from "@/lib/queue/jobs";
 import {
   evaluateSignals,
+  firstRunSummary,
   interpretationRequest,
   parseInterpretation,
   alertRow,
@@ -82,15 +83,25 @@ async function processRun(job: Job<JobData["process_apify_run"]>): Promise<void>
     log("process_apify_run_dataset_fetched", { runId, productCount: products.length });
 
     const baseline = await getBaseline(competitor.id);
-    const changes: DetectedChange[] = evaluateSignals(
-      products,
-      baseline,
-      competitor,
-      competitor.requestedSignals as SignalType[] | null,
-    );
+    const requestedSignals = competitor.requestedSignals as SignalType[] | null;
+    const changes: DetectedChange[] = evaluateSignals(products, baseline, competitor, requestedSignals);
+
+    // A first run correctly produces nothing from price/catalog/inventory —
+    // there's no baseline yet to compare against (see evaluateSignals). But
+    // the operator still wants to see something after their first Run Now,
+    // not silence — added separately so the WF-02 parity-tested diff
+    // branches above are never touched by this.
+    const isFirstRun = baseline.filter((row) => row?.product_handle).length === 0;
+    if (isFirstRun) {
+      const summary = firstRunSummary(products, competitor);
+      const allowed = requestedSignals ? new Set<string>(requestedSignals) : null;
+      changes.push(...summary.filter((change) => !allowed || allowed.has(change.signal_type)));
+    }
+
     log("process_apify_run_changes_evaluated", {
       runId,
       changeCount: changes.length,
+      isFirstRun,
       requestedSignals: competitor.requestedSignals ?? "all",
     });
 
