@@ -18,6 +18,14 @@ const APIFY_API_URL = "https://api.apify.com/v2";
 const STALE_THRESHOLD_MINUTES = 3;
 
 /**
+ * A single transient network blip while checking Apify shouldn't be enough
+ * to write a failure — only a check that fails three times in a row writes
+ * anything to the database at all.
+ */
+const MAX_APIFY_CHECK_ATTEMPTS = 3;
+const APIFY_CHECK_RETRY_DELAY_MS = 2000;
+
+/**
  * The backstop for the backstop. Fixed, always-on (scheduled once at worker
  * startup, not per-competitor — see worker/queue.ts), independent of
  * check_apify_run's own reschedule chain entirely: it doesn't matter whether
@@ -69,15 +77,21 @@ async function runSweep(): Promise<void> {
 }
 
 async function resolveStaleRun(runId: string, competitorId: string): Promise<void> {
-  let apifyStatus: string;
-  try {
-    apifyStatus = await fetchApifyRunStatus(runId);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    await updateScrapeRunStatus(runId, "failed", `stale_run:apify_unreachable — ${message}`);
-    log("sweep_stale_run_resolved", { runId, competitorId, category: "apify_unreachable" });
+  const checked = await fetchApifyRunStatusWithRetries(runId);
+  if (!checked.ok) {
+    // All MAX_APIFY_CHECK_ATTEMPTS attempts failed — this is the only case
+    // that writes to the database on a check failure. A single blip that
+    // succeeds on attempt 2 or 3 leaves no trace at all.
+    await updateScrapeRunStatus(runId, "failed", `stale_run:apify_unreachable — ${checked.error}`);
+    log("sweep_stale_run_resolved", {
+      runId,
+      competitorId,
+      category: "apify_unreachable",
+      attempts: MAX_APIFY_CHECK_ATTEMPTS,
+    });
     return;
   }
+  const apifyStatus = checked.status;
 
   if (apifyStatus === "SUCCEEDED") {
     // The result exists — let the normal success path record it (alerts,
@@ -105,6 +119,29 @@ async function resolveStaleRun(runId: string, competitorId: string): Promise<voi
     `stale_run:apify_hung — still ${apifyStatus} after ${STALE_THRESHOLD_MINUTES}m`,
   );
   log("sweep_stale_run_resolved", { runId, competitorId, category: "apify_hung" });
+}
+
+type ApifyCheckResult = { ok: true; status: string } | { ok: false; error: string };
+
+/**
+ * Tries up to MAX_APIFY_CHECK_ATTEMPTS times, a few seconds apart, before
+ * reporting failure — so one transient network blip never writes anything
+ * to the database (see resolveStaleRun).
+ */
+async function fetchApifyRunStatusWithRetries(runId: string): Promise<ApifyCheckResult> {
+  let lastError = "unknown error";
+  for (let attempt = 1; attempt <= MAX_APIFY_CHECK_ATTEMPTS; attempt++) {
+    try {
+      const status = await fetchApifyRunStatus(runId);
+      return { ok: true, status };
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+      if (attempt < MAX_APIFY_CHECK_ATTEMPTS) {
+        await new Promise((resolve) => setTimeout(resolve, APIFY_CHECK_RETRY_DELAY_MS));
+      }
+    }
+  }
+  return { ok: false, error: lastError };
 }
 
 async function fetchApifyRunStatus(runId: string): Promise<string> {
