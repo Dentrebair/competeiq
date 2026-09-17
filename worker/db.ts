@@ -115,6 +115,31 @@ export async function updateScrapeRunStatus(
   );
 }
 
+export interface StaleRunRow {
+  run_id: string;
+  competitor_id: string;
+}
+
+/**
+ * Rows stuck in running/processing well past how long a real run has ever
+ * taken (worker/handlers/sweep-stale-runs.ts) — the case where
+ * check_apify_run's own reschedule chain broke and nothing ever resolved
+ * them. `olderThanMinutes` is deliberately small: real runs finish in
+ * seconds, so there is no "still legitimately working" case this threshold
+ * needs to protect against.
+ */
+export async function getStaleRuns(olderThanMinutes: number): Promise<StaleRunRow[]> {
+  const db = getPipelineDb();
+  const { rows } = await db.query<StaleRunRow>(
+    `select run_id, competitor_id
+       from public.scrape_runs
+      where status in ('running', 'processing')
+        and started_at < now() - make_interval(mins => $1)`,
+    [olderThanMinutes],
+  );
+  return rows;
+}
+
 /** The Baseline as it stood before this run. Empty means the competitor's first run. */
 export async function getBaseline(competitorId: string): Promise<BaselineEntry[]> {
   const db = getPipelineDb();

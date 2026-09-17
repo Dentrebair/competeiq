@@ -24,8 +24,8 @@ export interface JobData {
    * Start one Apify scrape for a competitor. Queued by its schedule or by Run
    * Now. `signalTypes`, when present, restricts which signals
    * process_apify_run evaluates from this run's data — the picker on Run
-   * Now. Undefined (schedule, "Run in 2 min") means no restriction: every
-   * live signal is evaluated, same as before this field existed.
+   * Now. Undefined (the schedule) means no restriction: every live signal is
+   * evaluated, same as before this field existed.
    */
   start_scrape: { competitorId: string; signalTypes?: SignalType[] };
   /** The backstop for a lost webhook: look at a run about 30 minutes after it started. */
@@ -34,6 +34,15 @@ export interface JobData {
   process_apify_run: { runId: string };
   /** Fill in the digest row the app locked. */
   generate_digest: { digestId: string };
+  /**
+   * The backstop for the backstop: a fixed, always-on sweep (not
+   * per-competitor, never enqueued by the app) that catches any scrape_runs
+   * row stuck in running/processing well past how long a real run has ever
+   * taken — the case where check_apify_run's own reschedule chain broke
+   * (worker restart, exhausted retries, or Apify itself never resolving).
+   * No payload: it queries the database for whatever is stale right now.
+   */
+  sweep_stale_runs: Record<string, never>;
 }
 
 export type JobName = keyof JobData;
@@ -65,6 +74,11 @@ export const JOBS = {
   generate_digest: {
     queue: { policy: "exclusive", retryLimit: 2, retryDelay: 60, expireInSeconds: 1200 },
     work: { batchSize: 1, pollingIntervalSeconds: 10 },
+  },
+  sweep_stale_runs: {
+    // No retry: the next scheduled tick, one minute later, is already a retry.
+    queue: { policy: "exclusive", retryLimit: 0, expireInSeconds: 120 },
+    work: { batchSize: 1, pollingIntervalSeconds: 15 },
   },
 } satisfies Record<JobName, JobDefinition>;
 

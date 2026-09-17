@@ -7,6 +7,7 @@ import { processApifyRun } from "./handlers/process-apify-run";
 import { startScrape } from "./handlers/start-scrape";
 import { checkApifyRun } from "./handlers/check-apify-run";
 import { generateDigest } from "./handlers/generate-digest";
+import { sweepStaleRuns } from "./handlers/sweep-stale-runs";
 
 /**
  * Entry point for the Railway worker service: `npm run start:worker`.
@@ -19,6 +20,7 @@ const HANDLERS: JobHandlers = {
   start_scrape: startScrape,
   check_apify_run: checkApifyRun,
   generate_digest: generateDigest,
+  sweep_stale_runs: sweepStaleRuns,
 };
 
 async function main(): Promise<void> {

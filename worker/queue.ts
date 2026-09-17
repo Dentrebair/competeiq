@@ -32,6 +32,12 @@ export async function startWorkerQueue(databaseUrl: string, db: Pool): Promise<P
     await boss.createQueue(name, JOBS[name].queue);
   }
 
+  // The one schedule the worker sets up itself, not per-competitor and not
+  // driven by any app action — see worker/handlers/sweep-stale-runs.ts.
+  // schedule() replaces in place on a matching key, so this is safe on every
+  // start rather than only the first.
+  await boss.schedule("sweep_stale_runs", "* * * * *", {}, { key: "sweep_stale_runs" });
+
   await grantIntake(boss, db);
   return boss;
 }
