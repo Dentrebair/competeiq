@@ -82,7 +82,13 @@ async function resolveStaleRun(runId: string, competitorId: string): Promise<voi
     // All MAX_APIFY_CHECK_ATTEMPTS attempts failed — this is the only case
     // that writes to the database on a check failure. A single blip that
     // succeeds on attempt 2 or 3 leaves no trace at all.
-    await updateScrapeRunStatus(runId, "failed", `stale_run:apify_unreachable — ${checked.error}`);
+    await updateScrapeRunStatus(
+      runId,
+      "failed",
+      `stale_run:apify_unreachable — ${checked.error}`,
+      undefined,
+      "UNREACHABLE",
+    );
     log("sweep_stale_run_resolved", {
       runId,
       competitorId,
@@ -101,22 +107,29 @@ async function resolveStaleRun(runId: string, competitorId: string): Promise<voi
     return;
   }
 
-  if (apifyStatus === "FAILED" || apifyStatus === "ABORTED") {
+  if (apifyStatus === "FAILED" || apifyStatus === "ABORTED" || apifyStatus === "TIMED-OUT") {
     await updateScrapeRunStatus(
       runId,
       "failed",
       `stale_run:reschedule_chain_broken — apify ${apifyStatus.toLowerCase()}`,
+      undefined,
+      apifyStatus,
     );
     log("sweep_stale_run_resolved", { runId, competitorId, category: "reschedule_chain_broken" });
     return;
   }
 
-  // Still RUNNING (or an unexpected value) well past any real run's
-  // duration — the hang is on Apify's side, not in our own pipeline.
+  // Still READY/RUNNING/TIMING-OUT/ABORTING (or a genuinely unexpected
+  // value) well past any real run's duration — the hang is on Apify's
+  // side, not in our own pipeline. Deliberately resolved now rather than
+  // waiting for check_apify_run's own 30-minute-later first look — nothing
+  // real takes this long for this actor.
   await updateScrapeRunStatus(
     runId,
     "failed",
     `stale_run:apify_hung — still ${apifyStatus} after ${STALE_THRESHOLD_MINUTES}m`,
+    undefined,
+    "HUNG",
   );
   log("sweep_stale_run_resolved", { runId, competitorId, category: "apify_hung" });
 }
@@ -144,8 +157,13 @@ async function fetchApifyRunStatusWithRetries(runId: string): Promise<ApifyCheck
   return { ok: false, error: lastError };
 }
 
+/**
+ * GET /v2/actor-runs/{runId} — the current, documented endpoint (same one
+ * process-apify-run.ts and check-apify-run.ts use). An older `/v2/runs/`
+ * path was in use here before — not a documented endpoint.
+ */
 async function fetchApifyRunStatus(runId: string): Promise<string> {
-  const res = await fetch(`${APIFY_API_URL}/runs/${runId}`, {
+  const res = await fetch(`${APIFY_API_URL}/actor-runs/${runId}`, {
     headers: { Authorization: `Bearer ${requireEnv("APIFY_API_TOKEN")}` },
   });
   if (!res.ok) {

@@ -154,6 +154,17 @@ export type ScrapeRun = {
   status: ScrapeRunStatus;
   error: string | null;
   updated_at: string;
+  /**
+   * Apify's own literal terminal word (SUCCEEDED/FAILED/TIMED_OUT/ABORTED),
+   * or one of two synthetic values for a failure Apify never confirmed
+   * (UNREACHABLE, HUNG — see supabase/18). Null when the pipeline's own
+   * processing failed after Apify itself succeeded — that fault is ours,
+   * not Apify's, and this column correctly has nothing to say about it.
+   */
+  apify_status: string | null;
+  dataset_id: string | null;
+  completed_at: string | null;
+  retry_count: number;
 }
 
 /**

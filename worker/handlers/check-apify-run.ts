@@ -27,6 +27,14 @@ export async function checkApifyRun(jobs: Job<JobData["check_apify_run"]>[]): Pr
   }
 }
 
+/**
+ * Verified against Apify's current docs (docs.apify.com/api/v2/actor-run-get):
+ * terminal statuses use a HYPHEN, not an underscore. Never write "TIMED_OUT" —
+ * Apify's API never returns that string, so a comparison against it would
+ * silently never match.
+ */
+const STILL_GOING = new Set(["READY", "RUNNING", "TIMING-OUT", "ABORTING"]);
+
 async function runCheck(runId: string, competitorId: string): Promise<void> {
   const run = await fetchApifyRun(runId);
   log("check_apify_run_polled", { runId, competitorId, apifyStatus: run.status });
@@ -35,18 +43,20 @@ async function runCheck(runId: string, competitorId: string): Promise<void> {
     // The webhook made it through, or we're the backstop. Either way,
     // process the run. process_apify_run is idempotent (exclusive policy).
     await enqueueFromWorker("process_apify_run", { runId });
-  } else if (run.status === "RUNNING") {
-    // Still going. Reschedule for ~5 minutes from now.
+  } else if (STILL_GOING.has(run.status)) {
+    // Still going — READY (queued), RUNNING, or mid-way through timing out
+    // or aborting (Apify itself hasn't landed on a terminal status yet).
+    // Reschedule for ~5 minutes from now.
     await enqueueFromWorker(
       "check_apify_run",
       { runId, competitorId },
       { singletonKey: runId, startAfter: 300 },
     );
-  } else if (run.status === "FAILED" || run.status === "ABORTED") {
-    // Apify failed or the run was stopped. Log it, don't enqueue the processor.
+  } else if (run.status === "FAILED" || run.status === "ABORTED" || run.status === "TIMED-OUT") {
+    // A genuine terminal failure. Log it, don't enqueue the processor.
     // The competitor is waiting for the next scheduled start_scrape.
     const message = `Apify run ${run.status.toLowerCase()}`;
-    await updateScrapeRunStatus(runId, "failed", message);
+    await updateScrapeRunStatus(runId, "failed", message, undefined, run.status);
     console.error(
       JSON.stringify({
         event: "apify_run_terminal_failure",
@@ -56,19 +66,26 @@ async function runCheck(runId: string, competitorId: string): Promise<void> {
       }),
     );
   } else {
-    // TIMED_OUT or other status — treat as an error (retryable).
+    // Truly unexpected value — not one of Apify's documented statuses.
+    // Retryable, since this might be a transient parsing/API issue.
     const message = `Apify run ${runId} has unexpected status: ${run.status}`;
-    await updateScrapeRunStatus(runId, "failed", message);
+    await updateScrapeRunStatus(runId, "failed", message, undefined, run.status);
     throw new Error(message);
   }
 }
 
 /**
- * GET /v2/runs/{runId} — check the run's status. Returns the full run object.
- * Status values: READY, RUNNING, SUCCEEDED, FAILED, TIMED_OUT, ABORTED.
+ * GET /v2/actor-runs/{runId} — the current, documented endpoint for one run
+ * by id (docs.apify.com/api/v2/actor-run-get); same endpoint
+ * process-apify-run.ts already uses. An older `/v2/runs/{runId}` path was in
+ * use here before — not a documented endpoint, standardized on this one.
+ *
+ * Status values, exactly as Apify returns them (hyphens, not underscores):
+ * READY, RUNNING, TIMING-OUT, ABORTING (in progress) — SUCCEEDED, FAILED,
+ * TIMED-OUT, ABORTED (terminal).
  */
 async function fetchApifyRun(runId: string): Promise<{ status: string }> {
-  const res = await fetch(`${APIFY_API_URL}/runs/${runId}`, {
+  const res = await fetch(`${APIFY_API_URL}/actor-runs/${runId}`, {
     headers: {
       Authorization: `Bearer ${requireEnv("APIFY_API_TOKEN")}`,
     },

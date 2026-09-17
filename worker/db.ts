@@ -118,11 +118,19 @@ export type ScrapeRunStatus = "running" | "processing" | "succeeded" | "failed";
  * this actually finish" value distinct from `updated_at`, which moves on
  * every intermediate step too.
  */
+/**
+ * `apifyStatus`, when given, is Apify's own literal terminal word (or one of
+ * the two synthetic values for a failure Apify never confirmed —
+ * UNREACHABLE, HUNG) — see supabase/18 and lib/types/database.ts. Left
+ * unset for a failure that happened after Apify itself succeeded (empty
+ * dataset, Claude errors): that fault is ours, not Apify's.
+ */
 export async function updateScrapeRunStatus(
   runId: string,
   status: ScrapeRunStatus,
   error?: string,
   datasetId?: string,
+  apifyStatus?: string,
 ): Promise<void> {
   const db = getPipelineDb();
   const terminal = status === "succeeded" || status === "failed";
@@ -131,10 +139,11 @@ export async function updateScrapeRunStatus(
         set status = $2,
             error = $3,
             dataset_id = coalesce($4, dataset_id),
+            apify_status = coalesce($6, apify_status),
             completed_at = case when $5 then now() else completed_at end,
             updated_at = now()
       where run_id = $1`,
-    [runId, status, error ?? null, datasetId ?? null, terminal],
+    [runId, status, error ?? null, datasetId ?? null, terminal, apifyStatus ?? null],
   );
 }
 

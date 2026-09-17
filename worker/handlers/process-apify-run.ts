@@ -57,8 +57,15 @@ async function processRun(job: Job<JobData["process_apify_run"]>): Promise<void>
   log("process_apify_run_started", { runId, competitorId: competitor.id, name: competitor.name });
   await updateScrapeRunStatus(runId, "processing");
 
+  // Set once Apify's run is fetched, so a failure caught below can record
+  // what Apify actually said (FAILED/TIMED_OUT/ABORTED) — distinct from a
+  // failure that happens after Apify succeeded (empty dataset, Claude
+  // errors), where this stays "SUCCEEDED" and the fault is ours.
+  let apifyStatus: string | undefined;
+
   try {
     const run = await fetchApifyRun(runId);
+    apifyStatus = run.status;
     if (run.status !== "SUCCEEDED") {
       throw new Error(`Apify run ${runId} is ${run.status}, not SUCCEEDED`);
     }
@@ -102,12 +109,12 @@ async function processRun(job: Job<JobData["process_apify_run"]>): Promise<void>
     });
 
     // run.defaultDatasetId is confirmed non-null above (line 65-67).
-    await updateScrapeRunStatus(runId, "succeeded", undefined, run.defaultDatasetId);
+    await updateScrapeRunStatus(runId, "succeeded", undefined, run.defaultDatasetId, "SUCCEEDED");
     log("process_apify_run_succeeded", { runId, competitorId: competitor.id, alertCount: alerts.length });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     await recordRunError(competitor.id, message);
-    await updateScrapeRunStatus(runId, "failed", message);
+    await updateScrapeRunStatus(runId, "failed", message, undefined, apifyStatus);
     throw error;
   }
 }

@@ -173,8 +173,32 @@ function runProgressPercent(status: ScrapeRun["status"]): number {
  * severity color ramp (orange -> yellow -> green, red on failure) rather
  * than inventing a new palette for the same "how worried should I be" scale.
  */
-function runStageLabel(status: ScrapeRun["status"]): string {
-  switch (status) {
+/**
+ * A "failed" run gets a specific reason when one is known — Apify's own
+ * literal word (via scrape_runs.apify_status, supabase/18) rather than a
+ * single generic "Error" for every kind of failure. Null apify_status means
+ * Apify itself succeeded and our own processing failed afterward (empty
+ * dataset, Claude errors) — that's still just "Error", since the fault is
+ * ours, not something Apify reported.
+ */
+function failureLabel(apifyStatus: string | null): string {
+  switch (apifyStatus) {
+    case "TIMED-OUT":
+      return "Timed out";
+    case "ABORTED":
+      return "Aborted";
+    case "UNREACHABLE":
+      return "Connection error";
+    case "HUNG":
+      return "Stalled";
+    case "FAILED":
+    default:
+      return "Error";
+  }
+}
+
+function runStageLabel(run: ScrapeRun): string {
+  switch (run.status) {
     case "running":
       return "Scraping data";
     case "processing":
@@ -182,7 +206,7 @@ function runStageLabel(status: ScrapeRun["status"]): string {
     case "succeeded":
       return "Finished";
     case "failed":
-      return "Error";
+      return failureLabel(run.apify_status);
   }
 }
 
@@ -304,7 +328,7 @@ function RunProgress({ run }: { run: ScrapeRun | null }) {
   const active = isRunActive(run);
   const failed = run.status === "failed";
   const percent = runProgressPercent(run.status);
-  const stage = runStageLabel(run.status);
+  const stage = runStageLabel(run);
   const color = runStageColor(run.status);
 
   return (
