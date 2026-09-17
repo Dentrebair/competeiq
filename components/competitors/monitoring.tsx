@@ -168,6 +168,38 @@ function runProgressPercent(status: ScrapeRun["status"]): number {
 }
 
 /**
+ * Plain words for what the pipeline is doing, not the internal status name —
+ * an operator was never going to know what "processing" means. Reuses the
+ * severity color ramp (orange -> yellow -> green, red on failure) rather
+ * than inventing a new palette for the same "how worried should I be" scale.
+ */
+function runStageLabel(status: ScrapeRun["status"]): string {
+  switch (status) {
+    case "running":
+      return "Scraping data";
+    case "processing":
+      return "Digest";
+    case "succeeded":
+      return "Finished";
+    case "failed":
+      return "Error";
+  }
+}
+
+function runStageColor(status: ScrapeRun["status"]): { bar: string; text: string } {
+  switch (status) {
+    case "running":
+      return { bar: "bg-sev-high", text: "text-sev-high" };
+    case "processing":
+      return { bar: "bg-sev-medium", text: "text-sev-medium" };
+    case "succeeded":
+      return { bar: "bg-sev-low", text: "text-sev-low" };
+    case "failed":
+      return { bar: "bg-sev-critical", text: "text-sev-critical" };
+  }
+}
+
+/**
  * Live status for one competitor's most recent scrape run — what "Run Now"
  * actually did, not just whether the click succeeded. Seeded from the
  * server-rendered row, then kept current over Realtime (supabase/11): a
@@ -271,9 +303,9 @@ function RunProgress({ run }: { run: ScrapeRun | null }) {
 
   const active = isRunActive(run);
   const failed = run.status === "failed";
-  const succeeded = run.status === "succeeded";
   const percent = runProgressPercent(run.status);
-  const barColor = failed ? "bg-sev-critical" : succeeded ? "bg-sev-low" : "bg-accent";
+  const stage = runStageLabel(run.status);
+  const color = runStageColor(run.status);
 
   return (
     <div className="flex flex-col gap-1">
@@ -283,39 +315,30 @@ function RunProgress({ run }: { run: ScrapeRun | null }) {
         aria-valuenow={percent}
         aria-valuemin={0}
         aria-valuemax={100}
-        aria-label={`Scrape run ${percent}% ${failed ? "failed" : succeeded ? "complete" : "in progress"}`}
+        aria-label={`${stage}, ${percent}%`}
       >
         <div className="h-1.5 w-full max-w-32 overflow-hidden rounded-full bg-surface-sunken">
           <div
-            className={`h-full rounded-full transition-all duration-700 ease-out ${barColor} ${
+            className={`h-full rounded-full transition-all duration-700 ease-out ${color.bar} ${
               active ? "animate-pulse" : ""
             }`}
             style={{ width: `${percent}%` }}
           />
         </div>
-        <span
-          className={`tabular shrink-0 text-sm font-medium ${
-            failed ? "text-sev-critical" : active ? "text-ink-muted" : "text-ink-faint"
-          }`}
-        >
-          {percent}%
-        </span>
+        <span className={`tabular shrink-0 text-sm font-medium ${color.text}`}>{percent}%</span>
       </div>
-      {/* No text while a run is in flight — the bar carries that on its own.
-          Only a finished run (succeeded/failed) gets a word next to it. */}
-      {!active ? (
-        <span
-          className={`text-sm ${failed ? "font-semibold text-sev-critical" : "text-ink-faint"}`}
-          title={run.error ?? undefined}
-        >
-          {failed ? "Failed" : "Completed"}
-          {failed && run.error ? (
-            <span className="ml-1 max-w-48 truncate align-bottom">— {run.error}</span>
-          ) : null}
-          {" · "}
-          <TimeAgo iso={run.updated_at} />
-        </span>
-      ) : null}
+      <span className={`text-sm font-medium ${color.text}`} title={run.error ?? undefined}>
+        {stage}
+        {failed && run.error ? (
+          <span className="ml-1 max-w-48 truncate align-bottom font-normal">— {run.error}</span>
+        ) : null}
+        {!active ? (
+          <>
+            {" · "}
+            <TimeAgo iso={run.updated_at} className="font-normal text-ink-faint" />
+          </>
+        ) : null}
+      </span>
     </div>
   );
 }
