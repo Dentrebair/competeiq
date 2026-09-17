@@ -9,7 +9,6 @@ import {
   setCompetitorActive,
   updateSignalConfig,
   runCompetitorNow,
-  runCompetitorInTwoMinutes,
   type CompetitorActionState,
 } from "@/app/actions/competitors";
 import { suggestAlternativesFor } from "@/app/actions/onboarding";
@@ -119,80 +118,6 @@ function TrashIcon({ className = "size-3.5" }: { className?: string }) {
       strokeLinejoin="round"
     >
       <path d="M2.5 4.5h11M6 4.5V3a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v1.5M6.5 7.5v4M9.5 7.5v4M3.5 4.5l.6 8.2a1 1 0 0 0 1 .9h5.8a1 1 0 0 0 1-.9l.6-8.2" />
-    </svg>
-  );
-}
-
-function ClockIcon({ className = "size-3.5" }: { className?: string }) {
-  return (
-    <svg
-      aria-hidden
-      viewBox="0 0 16 16"
-      className={className}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.4"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <circle cx="8" cy="8" r="6" />
-      <path d="M8 4.8V8l2.4 1.4" />
-    </svg>
-  );
-}
-
-/**
- * A small ring, used only for the "Run in 2 min" preview — the linear bar
- * (RunProgress) stays the visual language for normal Run Now clicks and
- * scheduled runs. This one is deliberately distinct so a delayed preview
- * never reads as an actual scheduled or manual run in progress.
- */
-function CircularProgress({
-  percent,
-  className = "text-accent",
-  size = 32,
-  strokeWidth = 3,
-}: {
-  percent: number;
-  className?: string;
-  size?: number;
-  strokeWidth?: number;
-}) {
-  const radius = (size - strokeWidth) / 2;
-  const circumference = 2 * Math.PI * radius;
-  const offset = circumference - (Math.min(100, Math.max(0, percent)) / 100) * circumference;
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox={`0 0 ${size} ${size}`}
-      className="-rotate-90"
-      role="progressbar"
-      aria-valuenow={percent}
-      aria-valuemin={0}
-      aria-valuemax={100}
-    >
-      <circle
-        cx={size / 2}
-        cy={size / 2}
-        r={radius}
-        fill="none"
-        stroke="currentColor"
-        strokeWidth={strokeWidth}
-        className="text-surface-sunken"
-      />
-      <circle
-        cx={size / 2}
-        cy={size / 2}
-        r={radius}
-        fill="none"
-        stroke="currentColor"
-        strokeWidth={strokeWidth}
-        strokeLinecap="round"
-        strokeDasharray={circumference}
-        strokeDashoffset={offset}
-        className={`transition-all duration-500 ease-out ${className}`}
-      />
     </svg>
   );
 }
@@ -726,39 +651,12 @@ function AddCompetitor({
 }
 
 /** One card in the portfolio grid. Its own component so useLiveSignalConfigs — a hook — can be called per-competitor without breaking the Rules of Hooks inside a .map(). */
-/** "queued" is a client-only phase — nothing in the database says a delayed run is waiting to start. */
-type DelayedPhase = "queued" | ScrapeRun["status"];
-
-const DELAYED_RUN_MS = 120_000;
-
-function delayedRunPercent(phase: DelayedPhase, queuedElapsedMs: number): number {
-  switch (phase) {
-    case "queued":
-      return Math.min(40, (queuedElapsedMs / DELAYED_RUN_MS) * 40);
-    case "running":
-      return 60;
-    case "processing":
-      return 80;
-    case "succeeded":
-    case "failed":
-      return 100;
-  }
-}
-
-function formatCountdown(remainingMs: number): string {
-  const totalSeconds = Math.max(0, Math.ceil(remainingMs / 1000));
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
-}
-
 function CompetitorCard({
   competitor,
   selected,
   onSelect,
   onToggleActive,
   onOpenRunNow,
-  onRunDelayed,
   onDelete,
   togglingId,
   runningId,
@@ -769,7 +667,6 @@ function CompetitorCard({
   onToggleActive: () => void;
   /** Opens the signal picker (RunNowModal) — Run Now no longer fires directly from the card. */
   onOpenRunNow: () => void;
-  onRunDelayed: () => Promise<CompetitorActionState>;
   onDelete: () => void;
   togglingId: string | null;
   runningId: string | null;
@@ -781,34 +678,6 @@ function CompetitorCard({
   const scrapeActive = isRunActive(run);
   const runPending = runningId === competitor.id || scrapeActive;
   const togglePending = togglingId === competitor.id;
-
-  // The "Run in 2 min" preview — purely client-side until the delayed job
-  // actually fires and produces a real scrape_runs row.
-  const [delayedAt, setDelayedAt] = useState<number | null>(null);
-  const [delayedPending, startDelayedTransition] = useTransition();
-  const [now, setNow] = useState(() => Date.now());
-
-  useEffect(() => {
-    if (delayedAt === null) return;
-    const interval = setInterval(() => setNow(Date.now()), 500);
-    return () => clearInterval(interval);
-  }, [delayedAt]);
-
-  const delayedRunStarted =
-    delayedAt !== null && run !== null && new Date(run.started_at).getTime() >= delayedAt;
-  const delayedPhase: DelayedPhase | null =
-    delayedAt === null ? null : delayedRunStarted && run ? run.status : "queued";
-  const delayedTerminal = delayedPhase === "succeeded" || delayedPhase === "failed";
-  const delayedPercent =
-    delayedPhase === null ? 0 : delayedRunPercent(delayedPhase, now - (delayedAt ?? now));
-  const delayedActive = delayedAt !== null && !delayedTerminal;
-
-  const runDelayed = () => {
-    startDelayedTransition(async () => {
-      const result = await onRunDelayed();
-      if (result.ok) setDelayedAt(Date.now());
-    });
-  };
 
   return (
     <div
@@ -839,11 +708,7 @@ function CompetitorCard({
           <button
             type="button"
             disabled={
-              scrapeActive
-                ? togglePending
-                : !competitor.active
-                  ? togglePending
-                  : runPending || delayedActive
+              scrapeActive ? togglePending : !competitor.active ? togglePending : runPending
             }
             onClick={(event) => {
               event.stopPropagation();
@@ -860,9 +725,7 @@ function CompetitorCard({
                 ? "A run is in progress — pause to stop future scheduled runs"
                 : !competitor.active
                   ? "Paused — click to resume monitoring"
-                  : delayedActive
-                    ? "A delayed run is already queued"
-                    : "Run now"
+                  : "Run now"
             }
             className={`grid size-9 place-items-center rounded-full border transition-all hover:scale-105 disabled:opacity-40 ${
               scrapeActive
@@ -889,33 +752,6 @@ function CompetitorCard({
 
           <button
             type="button"
-            disabled={delayedPending || delayedActive || runPending || !competitor.active}
-            onClick={(event) => {
-              event.stopPropagation();
-              runDelayed();
-            }}
-            title={
-              !competitor.active
-                ? "Competitor is paused"
-                : delayedActive
-                  ? "A delayed run is already queued"
-                  : "Preview this competitor's schedule — run in ~2 minutes"
-            }
-            className="grid size-9 place-items-center rounded-full border border-border text-ink transition-all hover:border-border-strong hover:bg-surface-sunken disabled:opacity-40 disabled:text-ink-muted"
-          >
-            {delayedPending ? (
-              <span
-                aria-hidden
-                className="size-3.5 animate-spin rounded-full border-[1.5px] border-current border-t-transparent"
-              />
-            ) : (
-              <ClockIcon />
-            )}
-            <span className="sr-only">Run in 2 minutes</span>
-          </button>
-
-          <button
-            type="button"
             onClick={(event) => {
               event.stopPropagation();
               onDelete();
@@ -934,40 +770,6 @@ function CompetitorCard({
       <div className="mt-2">
         <RunProgress run={run} />
       </div>
-
-      {delayedPhase ? (
-        <div className="mt-2 flex items-center gap-2.5 rounded-xl border border-border bg-surface-sunken px-3 py-2">
-          <CircularProgress
-            percent={delayedPercent}
-            size={26}
-            strokeWidth={2.5}
-            className={
-              delayedPhase === "failed"
-                ? "text-sev-critical"
-                : delayedPhase === "succeeded"
-                  ? "text-sev-low"
-                  : "text-accent"
-            }
-          />
-          <span
-            className={`text-sm ${delayedPhase === "failed" ? "font-semibold text-sev-critical" : "text-ink-muted"}`}
-            title={delayedPhase === "failed" ? (run?.error ?? undefined) : undefined}
-          >
-            {delayedPhase === "queued"
-              ? `Preview run starting in ${formatCountdown(DELAYED_RUN_MS - (now - (delayedAt ?? now)))}`
-              : delayedPhase === "running"
-                ? "Preview run: running…"
-                : delayedPhase === "processing"
-                  ? "Preview run: processing…"
-                  : delayedPhase === "succeeded"
-                    ? "Preview run: completed"
-                    : "Preview run: failed"}
-            {delayedPhase === "failed" && run?.error ? (
-              <span className="ml-1 max-w-40 truncate align-bottom">— {run.error}</span>
-            ) : null}
-          </span>
-        </div>
-      ) : null}
 
       <div className="mt-3.5 flex flex-wrap gap-1.5">
         {configs
@@ -1255,15 +1057,6 @@ export function Monitoring({
     });
   };
 
-  // Returns the result (rather than just handling it) so each card's own
-  // countdown only starts once the enqueue has actually succeeded — a
-  // free-tier cooldown rejection shouldn't animate a preview that was never
-  // queued.
-  const runDelayed = async (competitorId: string): Promise<CompetitorActionState> => {
-    const result = await runCompetitorInTwoMinutes(competitorId);
-    handle(result);
-    return result;
-  };
 
   const competitorToDelete = competitors.find((c) => c.id === confirmDeleteId) ?? null;
   const competitorForRunNow = competitors.find((c) => c.id === runNowModalId) ?? null;
@@ -1429,7 +1222,6 @@ export function Monitoring({
                 onSelect={() => setSelectedId(competitor.id)}
                 onToggleActive={() => toggleActive(competitor)}
                 onOpenRunNow={() => setRunNowModalId(competitor.id)}
-                onRunDelayed={() => runDelayed(competitor.id)}
                 onDelete={() => setConfirmDeleteId(competitor.id)}
                 togglingId={togglingId}
                 runningId={runningId}
