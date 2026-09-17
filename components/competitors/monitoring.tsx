@@ -88,7 +88,7 @@ function Toggle({
   );
 }
 
-function RunIcon({ className = "size-3.5" }: { className?: string }) {
+function RunIcon({ className = "size-4" }: { className?: string }) {
   return (
     <svg aria-hidden viewBox="0 0 16 16" className={className} fill="currentColor">
       <path d="M4 2.8v10.4a.8.8 0 0 0 1.2.7l8.4-5.2a.8.8 0 0 0 0-1.4L5.2 2.1A.8.8 0 0 0 4 2.8Z" />
@@ -96,7 +96,7 @@ function RunIcon({ className = "size-3.5" }: { className?: string }) {
   );
 }
 
-function PauseIcon({ className = "size-3.5" }: { className?: string }) {
+function PauseIcon({ className = "size-4" }: { className?: string }) {
   return (
     <svg aria-hidden viewBox="0 0 16 16" className={className} fill="currentColor">
       <rect x="3.3" y="2.5" width="3.2" height="11" rx="1" />
