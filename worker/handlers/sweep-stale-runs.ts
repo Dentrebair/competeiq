@@ -23,7 +23,7 @@ const STALE_THRESHOLD_MINUTES = 3;
  * anything to the database at all.
  */
 const MAX_APIFY_CHECK_ATTEMPTS = 3;
-const APIFY_CHECK_RETRY_DELAY_MS = 2000;
+const APIFY_CHECK_RETRY_DELAY_MS = 10_000;
 
 /**
  * The backstop for the backstop. Fixed, always-on (scheduled once at worker
