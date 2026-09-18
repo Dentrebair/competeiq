@@ -280,6 +280,10 @@ export type SignalConfig = {
   enabled: boolean;
   last_run_at: string | null;
   last_error: string | null;
+  /** When this signal last detected a change (alert generated). null = never changed. */
+  last_change_at: string | null;
+  /** When this signal was last checked in any run (regardless of result). */
+  last_checked_at: string | null;
   created_at: string;
   updated_at: string;
 }

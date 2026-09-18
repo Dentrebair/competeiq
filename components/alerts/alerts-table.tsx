@@ -9,9 +9,10 @@ import { TimeAgo } from "@/components/time-ago";
 import { LiveDot, SeverityChip, SignalTag, severityRail } from "@/components/ui/chips";
 import { EvidenceBody, InsightBlock, WhyItMatters } from "@/components/ui/insight-blocks";
 import { alertTitle, severityReason } from "@/lib/alert-title";
+import { getSignalStatus } from "@/lib/signal-status";
 import { signalTypeLabel } from "@/lib/signals";
 import { createClient } from "@/lib/supabase/client";
-import { normalizeSeverity, type Alert, type AlertAnalysis } from "@/lib/types/database";
+import { normalizeSeverity, type Alert, type AlertAnalysis, type SignalConfig } from "@/lib/types/database";
 
 /**
  * The triage queue.
@@ -157,6 +158,7 @@ export function AlertsTable({
   const [analyses, setAnalyses] = useState<Map<number, AlertAnalysis>>(
     () => new Map(initialAnalyses.map((row) => [row.alert_id, row])),
   );
+  const [signalConfigs, setSignalConfigs] = useState<SignalConfig[]>([]);
   const [connection, setConnection] = useState<Connection>("connecting");
   const [tab, setTab] = useState<Tab>("unread");
   const [highImpactOnly, setHighImpactOnly] = useState(false);
@@ -195,6 +197,19 @@ export function AlertsTable({
           if (!isRenderableAlert(payload.new)) return;
           const updated = payload.new;
           setAlerts((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
+        },
+      )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "signal_configs" },
+        (payload) => {
+          if (!payload.new || typeof payload.new !== "object") return;
+          const updated = payload.new as Partial<SignalConfig>;
+          setSignalConfigs((prev) =>
+            prev.map((c) =>
+              c.id === updated.id ? { ...c, ...updated } : c,
+            ),
+          );
         },
       )
       .subscribe((status) => {
@@ -258,6 +273,15 @@ export function AlertsTable({
     if (highImpactOnly) rows = rows.filter(isHighImpact);
     return rows;
   }, [alerts, tab, competitor, signalType, highImpactOnly]);
+
+  // Map signal configs by (competitorId, signalType) for quick lookup
+  const signalConfigMap = useMemo(() => {
+    const map = new Map<string, SignalConfig>();
+    for (const config of signalConfigs) {
+      map.set(`${config.competitor_id}:${config.signal_type}`, config);
+    }
+    return map;
+  }, [signalConfigs]);
 
   return (
     <div className="rounded-xl border border-border bg-surface shadow-[var(--shadow-card)]">
@@ -395,7 +419,7 @@ export function AlertsTable({
         <span className="eyebrow">Severity</span>
         <span className="eyebrow">Change</span>
         <span className="eyebrow">Signal</span>
-        <span className="eyebrow">Detected</span>
+        <span className="eyebrow">Signal Status</span>
         <span />
       </div>
 
@@ -461,7 +485,25 @@ export function AlertsTable({
 
                   <SignalTag type={alert.signal_type} badge className="text-sm" />
 
-                  <TimeAgo iso={alert.created_at} className="text-sm text-ink-faint" />
+                  {(() => {
+                    const config = signalConfigMap.get(
+                      `${alert.competitor_id}:${alert.signal_type}`,
+                    );
+                    const { message, isRecent } = getSignalStatus(
+                      config?.last_change_at ?? null,
+                      alert.created_at,
+                    );
+                    return (
+                      <span
+                        className={`text-sm ${
+                          isRecent ? "text-sev-high font-medium" : "text-ink-faint"
+                        }`}
+                        title={message}
+                      >
+                        {message}
+                      </span>
+                    );
+                  })()}
 
                   <span
                     aria-hidden
