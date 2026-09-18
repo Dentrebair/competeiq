@@ -291,13 +291,24 @@ export async function persistProcessedRun({
       );
     }
 
-    // Every enabled signal for this competitor was covered by one scrape.
+    // Every enabled signal for this competitor was checked in this run.
     await client.query(
       `update public.signal_configs
-          set last_run_at = now(), last_error = null
+          set last_run_at = now(), last_checked_at = now(), last_error = null
         where competitor_id = $1`,
       [competitorId],
     );
+
+    // Signals that generated alerts actually changed.
+    const changedSignalTypes = [...new Set(alerts.map((a) => a.signal_type))];
+    if (changedSignalTypes.length > 0) {
+      await client.query(
+        `update public.signal_configs
+            set last_change_at = now()
+          where competitor_id = $1 and signal_type = any($2)`,
+        [competitorId, changedSignalTypes],
+      );
+    }
 
     await client.query("commit");
   } catch (error) {
