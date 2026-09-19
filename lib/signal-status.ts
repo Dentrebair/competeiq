@@ -9,23 +9,19 @@ export function getSignalStatus(
   const now = Date.now();
   const alertCreated = new Date(alertCreatedAt).getTime();
 
-  // First-time detection: no change history yet, show when signal was first seen
+  // First-time detection: no change history yet
   if (!lastChangeAt) {
     const msAgo = now - alertCreated;
-    const minutesAgo = Math.floor(msAgo / 60_000);
     const hoursAgo = Math.floor(msAgo / 3_600_000);
-    const daysAgo = Math.floor(msAgo / 86_400_000);
+    const minutesAgo = Math.floor(msAgo / 60_000);
 
-    let message: string;
-    if (minutesAgo < 60) {
-      message = `New signal ${minutesAgo}m ago`;
-    } else if (hoursAgo < 24) {
-      message = `New signal ${hoursAgo}h ago`;
+    // Only "New signal" if detected within last 24h, otherwise "No history"
+    if (hoursAgo < 24) {
+      const message = minutesAgo < 60 ? `New signal ${minutesAgo}m ago` : `New signal ${hoursAgo}h ago`;
+      return { message, isRecent: true };
     } else {
-      message = `New signal ${daysAgo}d ago`;
+      return { message: "No tracking history", isRecent: false };
     }
-
-    return { message, isRecent: true };
   }
 
   const lastChange = new Date(lastChangeAt).getTime();
