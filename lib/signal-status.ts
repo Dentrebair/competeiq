@@ -14,14 +14,24 @@ export function getSignalStatus(
     const msAgo = now - alertCreated;
     const hoursAgo = Math.floor(msAgo / 3_600_000);
     const minutesAgo = Math.floor(msAgo / 60_000);
+    const daysAgo = Math.floor(msAgo / 86_400_000);
+    const weeksAgo = Math.floor(msAgo / 604_800_000);
 
-    // Only "New signal" if detected within last 24h, otherwise "No history"
+    let message: string;
+    let isRecent: boolean;
+
     if (hoursAgo < 24) {
-      const message = minutesAgo < 60 ? `New signal ${minutesAgo}m ago` : `New signal ${hoursAgo}h ago`;
-      return { message, isRecent: true };
+      message = minutesAgo < 60 ? `New signal ${minutesAgo}m ago` : `New signal ${hoursAgo}h ago`;
+      isRecent = true;
+    } else if (daysAgo < 7) {
+      message = `Signal since ${daysAgo}d ago`;
+      isRecent = false;
     } else {
-      return { message: "No tracking history", isRecent: false };
+      message = `Signal since ${weeksAgo}w ago`;
+      isRecent = false;
     }
+
+    return { message, isRecent };
   }
 
   const lastChange = new Date(lastChangeAt).getTime();
