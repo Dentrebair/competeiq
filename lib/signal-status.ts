@@ -6,13 +6,29 @@ export function getSignalStatus(
   lastChangeAt: string | null,
   alertCreatedAt: string,
 ): { message: string; isRecent: boolean } {
+  const now = Date.now();
+  const alertCreated = new Date(alertCreatedAt).getTime();
+
+  // First-time detection: no change history yet, show when signal was first seen
   if (!lastChangeAt) {
-    return { message: "Never changed", isRecent: false };
+    const msAgo = now - alertCreated;
+    const minutesAgo = Math.floor(msAgo / 60_000);
+    const hoursAgo = Math.floor(msAgo / 3_600_000);
+    const daysAgo = Math.floor(msAgo / 86_400_000);
+
+    let message: string;
+    if (minutesAgo < 60) {
+      message = `New signal ${minutesAgo}m ago`;
+    } else if (hoursAgo < 24) {
+      message = `New signal ${hoursAgo}h ago`;
+    } else {
+      message = `New signal ${daysAgo}d ago`;
+    }
+
+    return { message, isRecent: true };
   }
 
   const lastChange = new Date(lastChangeAt).getTime();
-  const alertCreated = new Date(alertCreatedAt).getTime();
-  const now = Date.now();
 
   // Time since the signal last changed (from now, not from alert time)
   const msAgo = now - lastChange;
