@@ -284,6 +284,8 @@ export type SignalConfig = {
   last_change_at: string | null;
   /** When this signal was last checked in any run (regardless of result). */
   last_checked_at: string | null;
+  /** Number of times this signal changed in the last 30 days. */
+  change_count_30d: number;
   created_at: string;
   updated_at: string;
 }

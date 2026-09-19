@@ -1,15 +1,30 @@
 /**
- * Calculate signal status message based on when it last changed.
- * Shows pattern context: is this signal noisy, stable, or actively changing?
+ * Signal status with pattern detection and color coding.
+ * Detects: fresh changes, repeated changes, stability, noise.
+ */
+
+export type SignalStatusColor = "red" | "yellow" | "green" | "gray";
+
+export interface SignalStatus {
+  message: string;
+  color: SignalStatusColor;
+}
+
+/**
+ * Analyze signal behavior based on:
+ * - last_change_at: when signal last changed
+ * - change_count_30d: how many times it changed in 30 days
+ * - alert.created_at: when this alert was first detected
  */
 export function getSignalStatus(
   lastChangeAt: string | null,
+  change_count_30d: number,
   alertCreatedAt: string,
-): { message: string; isRecent: boolean } {
+): SignalStatus {
   const now = Date.now();
   const alertCreated = new Date(alertCreatedAt).getTime();
 
-  // First-time detection: no change history yet
+  // No change history yet
   if (!lastChangeAt) {
     const msAgo = now - alertCreated;
     const hoursAgo = Math.floor(msAgo / 3_600_000);
@@ -17,63 +32,63 @@ export function getSignalStatus(
     const daysAgo = Math.floor(msAgo / 86_400_000);
     const weeksAgo = Math.floor(msAgo / 604_800_000);
 
-    let message: string;
-    let isRecent: boolean;
-
     if (hoursAgo < 24) {
-      message = minutesAgo < 60 ? `New signal ${minutesAgo}m ago` : `New signal ${hoursAgo}h ago`;
-      isRecent = true;
+      // Fresh detection: < 24h
+      const msg =
+        minutesAgo < 60 ? `New signal ${minutesAgo}m ago` : `New signal ${hoursAgo}h ago`;
+      return { message: msg, color: "red" };
     } else if (daysAgo < 7) {
-      message = `Signal since ${daysAgo}d ago`;
-      isRecent = false;
+      // Older signal, no history tracked
+      return { message: `Signal since ${daysAgo}d ago`, color: "gray" };
     } else {
-      message = `Signal since ${weeksAgo}w ago`;
-      isRecent = false;
+      // Very old, no history
+      return { message: `Signal since ${weeksAgo}w ago`, color: "gray" };
     }
-
-    return { message, isRecent };
   }
 
+  // Has change history
   const lastChange = new Date(lastChangeAt).getTime();
+  const msSinceChange = now - lastChange;
+  const minutesSince = Math.floor(msSinceChange / 60_000);
+  const hoursSince = Math.floor(msSinceChange / 3_600_000);
+  const daysSince = Math.floor(msSinceChange / 86_400_000);
+  const weeksSince = Math.floor(msSinceChange / 604_800_000);
 
-  // Time since the signal last changed (from now, not from alert time)
-  const msAgo = now - lastChange;
-  const minutesAgo = Math.floor(msAgo / 60_000);
-  const hoursAgo = Math.floor(msAgo / 3_600_000);
-  const daysAgo = Math.floor(msAgo / 86_400_000);
-  const weeksAgo = Math.floor(msAgo / 604_800_000);
-
-  let message: string;
-  let isRecent: boolean;
-
-  if (minutesAgo < 5) {
-    message = "Just changed";
-    isRecent = true;
-  } else if (minutesAgo < 60) {
-    message = `Changed ${minutesAgo}m ago`;
-    isRecent = true;
-  } else if (hoursAgo < 24) {
-    message = `Changed ${hoursAgo}h ago`;
-    isRecent = hoursAgo < 4;
-  } else if (daysAgo < 7) {
-    message = `Changed ${daysAgo}d ago`;
-    isRecent = false;
-  } else if (weeksAgo < 4) {
-    message = `Changed ${weeksAgo}w ago`;
-    isRecent = false;
-  } else {
-    message = `Stable for ${weeksAgo}w`;
-    isRecent = false;
+  // Check for "noise" pattern: too many changes in 30 days
+  const NOISE_THRESHOLD = 5; // 5+ changes = noisy
+  if (change_count_30d >= NOISE_THRESHOLD) {
+    return {
+      message: `Noise: ${change_count_30d} changes this month`,
+      color: "red",
+    };
   }
 
-  return { message, isRecent };
-}
+  // Check for "changed again" pattern: alert is old but signal changed recently
+  const msSinceAlert = now - alertCreated;
+  const daysSinceAlert = Math.floor(msSinceAlert / 86_400_000);
+  if (daysSinceAlert >= 2 && daysSince < daysSinceAlert) {
+    // Alert is at least 2 days old, but signal changed after it
+    const msg =
+      daysSince === 0
+        ? "Changed again today"
+        : daysSince === 1
+          ? "Changed again yesterday"
+          : `Changed again ${daysSince}d ago`;
+    return { message: msg, color: "yellow" };
+  }
 
-/**
- * Format signal status as a display string with emoji indicator.
- */
-export function formatSignalStatus(lastChangeAt: string | null): string {
-  const { message, isRecent } = getSignalStatus(lastChangeAt, new Date().toISOString());
-  const icon = isRecent ? "🔴" : "🟢";
-  return `${icon} ${message}`;
+  // Normal patterns: just changed or stable
+  if (minutesSince < 5) {
+    return { message: "Just changed", color: "red" };
+  } else if (minutesSince < 60) {
+    return { message: `Changed ${minutesSince}m ago`, color: "red" };
+  } else if (hoursSince < 4) {
+    return { message: `Changed ${hoursSince}h ago`, color: "red" };
+  } else if (hoursSince < 24) {
+    return { message: `Changed ${hoursSince}h ago`, color: "gray" };
+  } else if (daysSince < 7) {
+    return { message: `Changed ${daysSince}d ago`, color: "gray" };
+  } else {
+    return { message: `Stable for ${weeksSince}w`, color: "green" };
+  }
 }

@@ -304,7 +304,8 @@ export async function persistProcessedRun({
     if (changedSignalTypes.length > 0) {
       await client.query(
         `update public.signal_configs
-            set last_change_at = now()
+            set last_change_at = now(),
+                change_count_30d = change_count_30d + 1
           where competitor_id = $1 and signal_type = any($2)`,
         [competitorId, changedSignalTypes],
       );

@@ -489,15 +489,22 @@ export function AlertsTable({
                     const config = signalConfigMap.get(
                       `${alert.competitor_id}:${alert.signal_type}`,
                     );
-                    const { message, isRecent } = getSignalStatus(
+                    const { message, color } = getSignalStatus(
                       config?.last_change_at ?? null,
+                      config?.change_count_30d ?? 0,
                       alert.created_at,
                     );
+
+                    const colorClass = {
+                      red: "text-sev-high font-medium",
+                      yellow: "text-yellow-600 font-medium",
+                      green: "text-sev-low",
+                      gray: "text-ink-faint",
+                    }[color];
+
                     return (
                       <span
-                        className={`text-sm ${
-                          isRecent ? "text-sev-high font-medium" : "text-ink-faint"
-                        }`}
+                        className={`text-sm ${colorClass}`}
                         title={message}
                       >
                         {message}

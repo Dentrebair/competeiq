@@ -10,6 +10,10 @@ comment on column public.signal_configs.last_change_at is
 comment on column public.signal_configs.last_checked_at is
   'When this signal was last checked in any run (regardless of result).';
 
+-- Grant pipeline_worker UPDATE on these new columns (worker sets them after runs).
+grant update (last_change_at, last_checked_at) on public.signal_configs
+  to pipeline_worker;
+
 -- Verify the columns exist.
 select
   count(*)::int as column_count,
